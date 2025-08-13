@@ -1,11 +1,16 @@
 // ===== mini-me code =====
-;(() => {
-  function when(pred, fn) {
-    if (pred()) return void fn();
-    const obs = new MutationObserver(() => { if (pred()) { obs.disconnect(); fn(); } });
-    obs.observe(document.documentElement, { childList: true, subtree: true });
-    const iv = setInterval(() => { if (pred()) { clearInterval(iv); fn(); } }, 300);
-  }
+;(function () {
+  try {
+    function when(pred, fn) {
+      if (pred()) return fn();
+      var obs = new MutationObserver(function () {
+        if (pred()) { obs.disconnect(); fn(); }
+      });
+      obs.observe(document.documentElement, { childList: true, subtree: true });
+      var iv = setInterval(function () {
+        if (pred()) { clearInterval(iv); fn(); }
+      }, 300);
+    }
 
   function start() {
     if ($('#nav-intelli-routing').length) return; // no duplicates
