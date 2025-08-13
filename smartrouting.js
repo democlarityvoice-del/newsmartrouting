@@ -150,8 +150,10 @@ function renderCard(g){  // or renderGroupCard(g)
 ;(function(){
   // ---- Accent (defaults) ----
   // Base Clarity orange + a LIGHTER tint for headers.
-  var DEFAULT_ACCENT = '#e57027';
-  var DEFAULT_TINT   = '#fdeae1';  // softer header wash that matches Portal better
+var DEFAULT_ACCENT = '#f89406';
+var DEFAULT_TINT   = '#FDE8CC';  // or your favorite from above
+
+
 
   // ---- Scoped styles (affects only our overlay) ----
   function ensureStyle(){
