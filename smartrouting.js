@@ -225,60 +225,50 @@ function renderCard(g){  // or renderGroupCard(g)
     return null;
   }
 
-  // ------- Banner swap helpers -------
-  var _origBannerText = null;
-  function findBannerEl(){
-    var cand = [
-      '#page-title h1', '#pageTitle', '.page-title h1', '.pageTitle', '.content-title h1',
-      '.section-title h1', '.titlebar h1', '.breadcrumbs + h1', '.breadcrumb .active',
-      '#home h1', '.home h1', '.module-title h1', '#content h1', '#content h2'
-    ];
-    for (var i=0;i<cand.length;i++){
-      var el = document.querySelector(cand[i]);
-      if (!el) continue;
+
+  // ------- Banner swap helpers (robust) -------
+var _bannerEls = [], _origBannerTexts = [];
+
+function collectBannerEls(){
+  _bannerEls = []; _origBannerTexts = [];
+  var sels = [
+    '#page-title h1', '#pageTitle', '.page-title h1', '.pageTitle',
+    '.content-title h1', '.section-title h1', '.titlebar h1',
+    '.breadcrumbs + h1', '.breadcrumb .active',
+    '.module-title h1', '.module-title', '.tab-title', '.tabs .current',
+    '.home h1', '#home h1', '#content h1', '#content h2'
+  ];
+  var seen = new Set();
+  for (var i=0;i<sels.length;i++){
+    var nodes = document.querySelectorAll(sels[i]);
+    for (var j=0;j<nodes.length;j++){
+      var el = nodes[j]; if (seen.has(el)) continue;
       var txt = (el.textContent||'').trim();
-      if (txt) return el;
-    }
-    return null;
-  }
-  function swapBanner(on){
-    var el = findBannerEl(); if (!el) return;
-    if (on){
-      if (_origBannerText==null) _origBannerText = el.textContent;
-      el.textContent = 'Intelli Routing';
-    } else {
-      if (_origBannerText!=null) el.textContent = _origBannerText;
-      _origBannerText = null;
+      var box = el.getBoundingClientRect();
+      if (txt && box.top < 220 && box.width > 120) {
+        _bannerEls.push(el); _origBannerTexts.push(txt); seen.add(el);
+      }
     }
   }
+  // Fallback: visible elements that literally say “Home” near the top
+  if (!_bannerEls.length){
+    var all = document.querySelectorAll('h1,h2,.title,.titlebar,.tab-title,.module-title');
+    for (var k=0;k<all.length;k++){
+      var t=(all[k].textContent||'').trim();
+      var b=all[k].getBoundingClientRect();
+      if (t==='Home' && b.top<260 && b.width>100){ _bannerEls.push(all[k]); _origBannerTexts.push(t); }
+    }
+  }
+}
 
-  function ensureRoot(){
-    ensureStyle();
-    var host=findDockHost();
-    var mode = host ? 'dock' : 'float';
-    var root=document.getElementById('cv-intelli-root');
-    if(!root){
-      root=document.createElement('div');
-      root.id='cv-intelli-root';
-      root.innerHTML =
-        '<div class="cv-back"></div>'
-      + '<div class="cv-panel" role="dialog" aria-modal="true" aria-label="Intelli Routing">'
-      + '  <div class="cv-h"><div>Intelli Routing</div><button class="cv-x" title="Close">×</button></div>'
-      + '  <div class="cv-b"><div id="cv-intelli-mount">Loading…</div></div>'
-      + '</div>';
-      (host||document.body).appendChild(root);
-
-      function close(){ root.style.display='none'; swapBanner(false); }
-      root.querySelector('.cv-back').addEventListener('click', close);
-      root.querySelector('.cv-x').addEventListener('click', close);
-    } else {
-      var parent = host || document.body;
-      if (root.parentNode !== parent) parent.appendChild(root);
-    }
-    root.className = mode;
-    if (host && getComputedStyle(host).position==='static'){ host.style.position='relative'; }
-    return root;
+function swapBanner(on){
+  if (!_bannerEls.length) collectBannerEls();
+  for (var i=0;i<_bannerEls.length;i++){
+    var el=_bannerEls[i]; if (!el) continue;
+    el.textContent = on ? 'Intelli Routing' : (_origBannerTexts[i] || el.textContent);
   }
+}
+
 
   function openOverlay(){
     var root=ensureRoot();
