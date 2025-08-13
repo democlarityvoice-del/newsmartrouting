@@ -150,8 +150,8 @@ function renderCard(g){  // or renderGroupCard(g)
 ;(function(){
   // ---- Accent (defaults) ----
   // Base Clarity orange + a LIGHTER tint for headers.
-var DEFAULT_ACCENT = '#f89406';
-var DEFAULT_TINT   = '#FDE8CC';  // or your favorite from above
+  var DEFAULT_ACCENT = '#f89406';
+  var DEFAULT_TINT   = '#FDE8CC';  // or your favorite from above
 
 
 
