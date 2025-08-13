@@ -224,6 +224,37 @@ function renderCard(g){  // or renderGroupCard(g)
     for(var i=0;i<sels.length;i++){ var el=document.querySelector(sels[i]); if(el && el.offsetParent!==null && el.offsetHeight>200) return el; }
     return null;
   }
+// create/position the overlay root (docked when possible)
+function ensureRoot(){
+  ensureStyle();
+  var host = findDockHost();
+  var mode = host ? 'dock' : 'float';
+
+  var root = document.getElementById('cv-intelli-root');
+  if (!root){
+    root = document.createElement('div');
+    root.id = 'cv-intelli-root';
+    root.innerHTML =
+      '<div class="cv-back"></div>'
+    + '<div class="cv-panel" role="dialog" aria-modal="true" aria-label="Intelli Routing">'
+    + '  <div class="cv-h"><div>Intelli Routing</div><button class="cv-x" title="Close">×</button></div>'
+    + '  <div class="cv-b"><div id="cv-intelli-mount">Loading…</div></div>'
+    + '</div>';
+
+    (host || document.body).appendChild(root);
+
+    function close(){ root.style.display='none'; swapBanner(false); }
+    root.querySelector('.cv-back').addEventListener('click', close);
+    root.querySelector('.cv-x').addEventListener('click', close);
+  } else {
+    var parent = host || document.body;
+    if (root.parentNode !== parent) parent.appendChild(root);
+  }
+
+  root.className = mode;
+  if (host && getComputedStyle(host).position === 'static'){ host.style.position = 'relative'; }
+  return root;
+}
 
 
   // ------- Banner swap helpers (robust) -------
