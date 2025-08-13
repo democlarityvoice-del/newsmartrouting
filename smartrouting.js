@@ -17,8 +17,8 @@ const $new = $template.clone();
     $new.find('a').attr('id', 'nav-Intelli-Routing').attr('href', '#');
     $new.find('.nav-text').html('EngageCX');
     $new.find('.nav-bg-image').css({
-      '-webkit-mask-image': "url('https://raw.githubusercontent.com/democlarityvoice-del/engagecxicon/main/message-regular-full.svg?v=3')",
-      'mask-image':         "url('https://raw.githubusercontent.com/democlarityvoice-del/engagecxicon/main/message-regular-full.svg?v=3')",
+      '-webkit-mask-image': "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')",
+      'mask-image':         "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')",
       '-webkit-mask-repeat': 'no-repeat',
       'mask-repeat':         'no-repeat',
       '-webkit-mask-position':'center 48%',
