@@ -1,7 +1,5 @@
 // ===== mini-me code =====
 ;(() => {
-  const ICON = 'https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/main/icon.svg';
-
   function when(pred, fn) {
     if (pred()) return void fn();
     const obs = new MutationObserver(() => { if (pred()) { obs.disconnect(); fn(); } });
