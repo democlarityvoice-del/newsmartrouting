@@ -146,4 +146,88 @@
   });
 
   console.log('Intelli harness ready');
+
+// in https://democlarityvoice-del.github.io/newsmartrouting/smartrouting.js
+window.cvIntelliRoutingMount = function(root){
+  // styles
+  var css = document.createElement('style');
+  css.textContent = ".ir-row{display:flex;gap:16px}.ir-aa{border:1px solid #e8e8e8;border-radius:10px;margin:10px 0;box-shadow:0 4px 20px rgba(0,0,0,.06)}.ir-h{padding:10px 12px;background:#fafafa;border-bottom:1px solid #eee;display:flex;justify-content:space-between;align-items:center}.ir-b{padding:12px}.ir-key{padding:6px 8px;border:1px solid #eee;border-radius:8px;margin:4px 0;cursor:pointer}.ir-dest{margin:6px 0 6px 14px;border-left:2px solid #ddd;padding-left:10px;color:#444}.ir-tag{font-size:12px;padding:2px 6px;border-radius:6px;background:#eef;}";
+  root.innerHTML = ""; root.appendChild(css);
+
+  // layout
+  var wrap = document.createElement('div');
+  wrap.innerHTML =
+    '<div class="ir-row">'+
+      '<div style="width:220px">'+
+        '<div><b>View</b></div>'+
+        '<div><label><input type="radio" name="irv" value="aa" checked> Auto Attendants</label></div>'+
+        '<div><label><input type="radio" name="irv" value="trace"> Trace a call</label></div>'+
+        '<hr style="margin:10px 0">'+
+        '<input id="ir-search" placeholder="Search AA..." style="width:100%;padding:6px 8px;border:1px solid #ddd;border-radius:8px">'+
+      '</div>'+
+      '<div id="ir-main" style="flex:1"></div>'+
+    '</div>';
+  root.appendChild(wrap);
+
+  var main = wrap.querySelector('#ir-main');
+  var search = wrap.querySelector('#ir-search');
+
+  // --- fake data for now (swap later) ---
+  function loadAAIndex(){return Promise.resolve([
+    {id:"aa-main", name:"Main Menu"}, {id:"aa-sales", name:"Sales IVR"}, {id:"aa-support", name:"Support IVR"}
+  ]);}
+  function loadAADetails(id){
+    var map = {
+      "aa-main": {id:"aa-main", name:"Main Menu", keys:{
+        "1": {label:"Sales", dest:{type:"Queue", name:"Sales", id:"q-sales"}},
+        "2": {label:"Support", dest:{type:"AA", name:"Support IVR", id:"aa-support"}},
+        "timeout": {label:"Timeout", dest:{type:"Voicemail", name:"Main VM", id:"vm-main"}},
+        "invalid": {label:"Invalid", dest:{type:"Announcement", name:"Try again", id:"ann-retry"}}
+      }},
+      "aa-sales": {id:"aa-sales", name:"Sales IVR", keys:{
+        "1": {label:"East", dest:{type:"Queue", name:"Sales East", id:"q-se"}},
+        "2": {label:"West", dest:{type:"Queue", name:"Sales West", id:"q-sw"}}
+      }},
+      "aa-support": {id:"aa-support", name:"Support IVR", keys:{
+        "1": {label:"Phones", dest:{type:"Queue", name:"Support Phones", id:"q-ph"}},
+        "2": {label:"Internet", dest:{type:"Queue", name:"Support Net", id:"q-net"}},
+        "0": {label:"Operator", dest:{type:"User", name:"Front Desk", id:"u-op"}}
+      }}
+    };
+    return Promise.resolve(map[id]);
+  }
+  // --------------------------------------
+
+  var aaIndex = [];
+  function renderAAList(filter){
+    main.innerHTML = "";
+    aaIndex.filter(function(a){ return !filter || a.name.toLowerCase().indexOf(filter.toLowerCase())>=0; })
+      .forEach(function(aa){ main.appendChild(renderAACard(aa)); });
+  }
+
+  function renderAACard(aa){
+    var card = document.createElement('div'); card.className = 'ir-aa';
+    card.innerHTML = '<div class="ir-h"><div>'+aa.name+'</div><div class="ir-tag">Auto Attendant</div></div><div class="ir-b" id="b-'+aa.id+'">Loading…</div>';
+    loadAADetails(aa.id).then(function(detail){
+      var b = card.querySelector('#b-'+aa.id);
+      b.innerHTML = "";
+      Object.keys(detail.keys).forEach(function(key){
+        var row = document.createElement('div'); row.className = 'ir-key';
+        var kLabel = (key==="timeout"||key==="invalid") ? key : 'Key '+key;
+        row.textContent = kLabel+' — '+detail.keys[key].label;
+        b.appendChild(row);
+        // destination preview
+        var dest = document.createElement('div'); dest.className = 'ir-dest';
+        var d = detail.keys[key].dest;
+        dest.textContent = '→ '+d.type+': '+d.name;
+        b.appendChild(dest);
+      });
+    });
+    return card;
+  }
+
+  loadAAIndex().then(function(list){ aaIndex = list; renderAAList(""); });
+  search.addEventListener('input', function(){ renderAAList(this.value||""); });
+};
+  
 })();
