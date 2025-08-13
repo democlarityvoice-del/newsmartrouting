@@ -150,64 +150,108 @@ function renderCard(g){  // or renderGroupCard(g)
   // brand
   var ORANGE='#e57027', ORANGE_050='#fff2eb', ORANGE_075='#ffe9de', ORANGE_600='#bf541e';
 
-  // styles (SCOPED to our overlay only)
+  /* ===== Intelli Routing — Overlay (dock; scoped; banner swap; accent hook) ===== */
+;(function(){
+  // ---- Accent (defaults) ----
+  // Base Clarity orange + a LIGHTER tint for headers.
+  var DEFAULT_ACCENT = '#e57027';
+  var DEFAULT_TINT   = '#fdeae1';  // softer header wash that matches Portal better
+
+  // ---- Scoped styles (affects only our overlay) ----
   function ensureStyle(){
     if (document.getElementById('cv-intelli-style')) return;
     var css = [
-      '#cv-intelli-root{display:none}',
+      '#cv-intelli-root{display:none; --cv-accent:'+DEFAULT_ACCENT+'; --cv-tint:'+DEFAULT_TINT+';}',
       '#cv-intelli-root.dock{position:absolute; top:8px; right:8px; bottom:8px; left:8px; z-index:2}',
       '#cv-intelli-root.float{position:fixed; top:6%; left:50%; transform:translateX(-50%); z-index:999999; width:960px; max-width:90vw}',
-      '#cv-intelli-root .cv-back{position:absolute; top:0; right:0; bottom:0; left:0; background:rgba(0,0,0,.15)}',
+      '#cv-intelli-root .cv-back{position:absolute; inset:0; background:rgba(0,0,0,.15)}',
       '#cv-intelli-root.dock .cv-back{display:none}',
-      '#cv-intelli-root .cv-panel{position:absolute; top:0; right:0; bottom:0; left:0; background:#fff; border-radius:12px; box-shadow:0 8px 40px rgba(0,0,0,.10); font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; box-sizing:border-box}',
+      '#cv-intelli-root .cv-panel{position:absolute; inset:0; background:#fff; border-radius:12px; box-shadow:0 8px 40px rgba(0,0,0,.10); font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; box-sizing:border-box}',
       '#cv-intelli-root.float .cv-panel{height:auto}',
-      '#cv-intelli-root .cv-h{display:flex; align-items:center; justify-content:space-between; padding:12px 16px; background:linear-gradient(0deg, rgba(229,112,39,.06), rgba(229,112,39,.06)); border-bottom:1px solid rgba(229,112,39,.25); font-weight:600}',
+      '#cv-intelli-root .cv-h{display:flex; align-items:center; justify-content:space-between; padding:12px 16px; background:linear-gradient(180deg, var(--cv-tint), #fff); border-bottom:1px solid rgba(229,112,39,.22); font-weight:600}',
       '#cv-intelli-root .cv-x{cursor:pointer; background:transparent; border:none; font-size:20px; line-height:1}',
       '#cv-intelli-root .cv-b{padding:16px; height:calc(100% - 52px); overflow:auto}',
 
-      /* ===== scoped UI ===== */
+      /* ===== everything below is scoped to our overlay ===== */
       '#cv-intelli-root .ir{display:flex; gap:16px; min-height:420px}',
       '#cv-intelli-root .ir-left{width:340px; flex:0 0 340px}',
       '#cv-intelli-root .ir-right{flex:1; min-width:0}',
       '#cv-intelli-root .ir-h1{font-weight:600; margin:0 0 8px}',
       '#cv-intelli-root .ir-search{width:100%; padding:8px 10px; border:1px solid #ddd; border-radius:10px}',
-      '#cv-intelli-root .ir-search:focus{outline:none; box-shadow:0 0 0 3px rgba(229,112,39,.35); border-color:'+ORANGE+'}',
+      '#cv-intelli-root .ir-search:focus{outline:none; box-shadow:0 0 0 3px rgba(229,112,39,.35); border-color:var(--cv-accent)}',
       '#cv-intelli-root .ir-filters{display:flex; gap:6px; flex-wrap:wrap; margin:8px 0 10px}',
       '#cv-intelli-root .chip{font-size:12px; padding:4px 8px; border:1px solid #e5e5e5; border-radius:999px; background:#fafafa; cursor:pointer}',
       '#cv-intelli-root .chip:hover{background:#f6f7fb}',
-      '#cv-intelli-root .chip.active{background:'+ORANGE_050+'; border-color:'+ORANGE+'; color:#4a2a00}',
+      '#cv-intelli-root .chip.active{background:var(--cv-tint); border-color:var(--cv-accent); color:#4a2a00}',
       '#cv-intelli-root .list-outer{border:1px solid #eee; border-radius:10px; background:#fff}',
       '#cv-intelli-root .card{position:relative; border:1px solid #eee; border-radius:12px; background:#fff; box-shadow:0 8px 30px rgba(0,0,0,.06); margin-bottom:12px}',
-      '#cv-intelli-root .card .left-bar{position:absolute; left:0; top:0; bottom:0; width:6px; border-top-left-radius:12px; border-bottom-left-radius:12px; background:'+ORANGE+'}',
+      '#cv-intelli-root .card .left-bar{position:absolute; left:0; top:0; bottom:0; width:6px; border-top-left-radius:12px; border-bottom-left-radius:12px; background:var(--cv-accent)}',
       '#cv-intelli-root .card-h{position:relative; display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 14px 12px 20px; border-bottom:1px solid #eee; background:#fafafa; border-top-left-radius:12px; border-top-right-radius:12px}',
       '#cv-intelli-root .card-title{font-weight:600; line-height:1.2}',
       '#cv-intelli-root .hdr-left{display:flex; align-items:center; gap:8px; min-width:0}',
       '#cv-intelli-root .hdr-right{display:flex; align-items:center; gap:10px; flex-shrink:0}',
-      '#cv-intelli-root .count-badge{font-size:12px; background:'+ORANGE_050+'; color:#4a2a00; border:1px solid '+ORANGE+'; border-radius:999px; padding:2px 8px; white-space:nowrap}',
-      '#cv-intelli-root .dest-badge{font-size:12px; padding:2px 6px; border-radius:6px; background:'+ORANGE_050+'; border:1px solid '+ORANGE+'; white-space:nowrap}',
+      '#cv-intelli-root .count-badge{font-size:12px; background:var(--cv-tint); color:#4a2a00; border:1px solid var(--cv-accent); border-radius:999px; padding:2px 8px; white-space:nowrap}',
+      '#cv-intelli-root .dest-badge{font-size:12px; padding:2px 6px; border-radius:6px; background:var(--cv-tint); border:1px solid var(--cv-accent); white-space:nowrap}',
       '#cv-intelli-root .card-b{padding:12px 14px}',
       '#cv-intelli-root .rows{position:relative; height:220px; overflow:auto; border:1px solid #f2f2f2; border-radius:8px; background:#fff}',
       '#cv-intelli-root .vpad{height:0}',
       '#cv-intelli-root .row{display:flex; align-items:center; justify-content:space-between; height:40px; padding:0 10px; border-bottom:1px solid #f6f6f6; font-variant-numeric:tabular-nums}',
-      '#cv-intelli-root .row:hover{background:'+ORANGE_075+'}',
+      '#cv-intelli-root .row:hover{background:#fff7f2}',
       '#cv-intelli-root .row-num{font-variant-numeric:tabular-nums}',
       '#cv-intelli-root .muted{color:#666}',
       '#cv-intelli-root .controls{display:flex; gap:8px; align-items:center; margin:0 0 10px}',
       '#cv-intelli-root .sel{padding:6px 8px; border:1px solid #ddd; border-radius:8px; background:#fff}',
-      '#cv-intelli-root .sel:focus{outline:none; box-shadow:0 0 0 3px rgba(229,112,39,.35); border-color:'+ORANGE+'}',
-      '#cv-intelli-root .btn{cursor:pointer; border:none; background:'+ORANGE+'; color:#fff; padding:8px 12px; border-radius:10px; line-height:1; font-weight:600}',
-      '#cv-intelli-root .btn:hover{background:'+ORANGE_600+'}',
+      '#cv-intelli-root .sel:focus{outline:none; box-shadow:0 0 0 3px rgba(229,112,39,.35); border-color:var(--cv-accent)}',
+      '#cv-intelli-root .btn{cursor:pointer; border:none; background:var(--cv-accent); color:#fff; padding:8px 12px; border-radius:10px; line-height:1; font-weight:600}',
+      '#cv-intelli-root .btn:hover{filter:brightness(.95)}',
       '#cv-intelli-root .pill{font-size:12px; padding:2px 8px; border:1px solid #ddd; border-radius:999px; background:#fafafa}'
     ].join('\n');
     var st=document.createElement('style'); st.id='cv-intelli-style'; st.type='text/css';
     st.appendChild(document.createTextNode(css)); document.head.appendChild(st);
   }
 
+  // allow runtime override once you have the exact tint:
+  //   cvIntelliSetAccent('#e57027', '#FDE4D4')
+  function setAccent(accentHex, tintHex){
+    var root = document.getElementById('cv-intelli-root');
+    if (!root) return;
+    if (accentHex) root.style.setProperty('--cv-accent', accentHex);
+    if (tintHex)   root.style.setProperty('--cv-tint',   tintHex);
+  }
+  window.cvIntelliSetAccent = setAccent;
+
   function findDockHost(){
     var sels=['#page-content','#content','#contentArea','#main-content','#portal-content',
               '#container','#content_wrap','#contentWrap','#workarea','#inner-content','#engagecx-slot'];
     for(var i=0;i<sels.length;i++){ var el=document.querySelector(sels[i]); if(el && el.offsetParent!==null && el.offsetHeight>200) return el; }
     return null;
+  }
+
+  // ------- Banner swap helpers -------
+  var _origBannerText = null;
+  function findBannerEl(){
+    var cand = [
+      '#page-title h1', '#pageTitle', '.page-title h1', '.pageTitle', '.content-title h1',
+      '.section-title h1', '.titlebar h1', '.breadcrumbs + h1', '.breadcrumb .active',
+      '#home h1', '.home h1', '.module-title h1', '#content h1', '#content h2'
+    ];
+    for (var i=0;i<cand.length;i++){
+      var el = document.querySelector(cand[i]);
+      if (!el) continue;
+      var txt = (el.textContent||'').trim();
+      if (txt) return el;
+    }
+    return null;
+  }
+  function swapBanner(on){
+    var el = findBannerEl(); if (!el) return;
+    if (on){
+      if (_origBannerText==null) _origBannerText = el.textContent;
+      el.textContent = 'Intelli Routing';
+    } else {
+      if (_origBannerText!=null) el.textContent = _origBannerText;
+      _origBannerText = null;
+    }
   }
 
   function ensureRoot(){
@@ -225,8 +269,10 @@ function renderCard(g){  // or renderGroupCard(g)
       + '  <div class="cv-b"><div id="cv-intelli-mount">Loading…</div></div>'
       + '</div>';
       (host||document.body).appendChild(root);
-      root.querySelector('.cv-back').addEventListener('click', function(){ root.style.display='none'; });
-      root.querySelector('.cv-x').addEventListener('click', function(){ root.style.display='none'; });
+
+      function close(){ root.style.display='none'; swapBanner(false); }
+      root.querySelector('.cv-back').addEventListener('click', close);
+      root.querySelector('.cv-x').addEventListener('click', close);
     } else {
       var parent = host || document.body;
       if (root.parentNode !== parent) parent.appendChild(root);
@@ -239,6 +285,7 @@ function renderCard(g){  // or renderGroupCard(g)
   function openOverlay(){
     var root=ensureRoot();
     root.style.display='block';
+    swapBanner(true);                    // <-- change "Home" to "Intelli Routing"
     var mount=document.getElementById('cv-intelli-mount');
     if (typeof window.cvIntelliRoutingMount==='function'){
       try { window.cvIntelliRoutingMount(mount); } catch(e){ console.error('[Intelli] mount error:', e); }
@@ -250,6 +297,7 @@ function renderCard(g){  // or renderGroupCard(g)
   window.addEventListener('cv:intelli-routing:open', openOverlay, false);
   window.cvIntelliOpen = openOverlay; // manual test helper
 })();
+
 
 /* ===== Smart Routing+ — Group by Destination (Portal-safe, vanilla JS) ===== */
 ;(function(){
