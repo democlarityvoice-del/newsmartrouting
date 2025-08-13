@@ -145,10 +145,6 @@ function renderCard(g){  // or renderGroupCard(g)
   return card;
 }
 
-/* ===== Intelli Routing — Overlay (vanilla JS, dock if possible) ===== */
-;(function(){
-  // brand
-  var ORANGE='#e57027', ORANGE_050='#fff2eb', ORANGE_075='#ffe9de', ORANGE_600='#bf541e';
 
   /* ===== Intelli Routing — Overlay (dock; scoped; banner swap; accent hook) ===== */
 ;(function(){
