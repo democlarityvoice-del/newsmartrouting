@@ -1,5 +1,5 @@
 // ===== mini-me code =====
-;(function () {
+;(() => {
   const ICON = 'https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/main/icon.svg';
 
   function when(pred, fn) {
@@ -10,32 +10,25 @@
   }
 
   function start() {
-    // avoid duplicates
-    if ($('#nav-intelli-routing').length) return;
+    if ($('#nav-intelli-routing').length) return; // no duplicates
 
-    const $container = $('#nav-buttons');
-    if (!$container.length) return;
-
-    // use a known tile as a template; fall back to first li
     let $template = $('#nav-music');
-    if (!$template.length) $template = $container.children('li').first();
+    if (!$template.length) $template = $('#nav-buttons').children('li').first();
     if (!$template.length) return;
 
     const $new = $template.clone(false, false);
     $new.attr('id', 'nav-intelli-routing');
 
-    const $a = $new.find('a').first();
-    $a.attr('id', 'nav-intelli-routing-link')
+    const $a = $new.find('a').first()
+      .attr('id', 'nav-intelli-routing-link')
       .attr('href', '#')
       .attr('title', 'Intelli Routing');
 
-    // label
     $new.find('.nav-text').text('Intelli Routing');
 
-    // icon (mask)
     $new.find('.nav-bg-image').css({
-      '-webkit-mask-image': `url("${https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/main/icon.svg}")`,
-      'mask-image':         `url("${https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/main/icon.svg}")`,
+      '-webkit-mask-image': `url("${ICON}")`,
+      'mask-image':         `url("${ICON}")`,
       '-webkit-mask-repeat':'no-repeat',
       'mask-repeat':        'no-repeat',
       '-webkit-mask-position':'center 48%',
@@ -45,16 +38,16 @@
       'background-color':   'rgba(255,255,255,0.92)'
     });
 
-    // click → fire a custom event (hook your overlay/panel to this)
-    $a.off('click.intelli').on('click.intelli', function (e) {
+    // click → fire an event your overlay can listen for
+    $a.off('click.intelli').on('click.intelli', (e) => {
       e.preventDefault();
       window.dispatchEvent(new CustomEvent('cv:intelli-routing:open'));
     });
 
-    // insert after the template to keep styling/order
+    // actually insert it next to the template
     $new.insertAfter($template);
+    console.log('Intelli Routing button inserted');
   }
 
-  // wait for nav to exist, then add button
   when(() => $('#nav-buttons').length > 0, start);
-    }
+})();
