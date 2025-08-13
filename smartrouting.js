@@ -27,8 +27,8 @@
     $new.find('.nav-text').text('Intelli Routing');
 
     $new.find('.nav-bg-image').css({
-      '-webkit-mask-image': `url("${ICON}")`,
-      'mask-image':         `url("${ICON}")`,
+      '-webkit-mask-image': `url("${https://github.com/democlarityvoice-del/intellirouting-icon/raw/refs/heads/main/icon.svg")`,
+      'mask-image':         `url("${https://github.com/democlarityvoice-del/intellirouting-icon/raw/refs/heads/main/icon.svg")`,
       '-webkit-mask-repeat':'no-repeat',
       'mask-repeat':        'no-repeat',
       '-webkit-mask-position':'center 48%',
