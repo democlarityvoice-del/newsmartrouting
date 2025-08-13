@@ -14,7 +14,6 @@
 
   function start() {
     if ($('#nav-intelli-routing').length) return; // no duplicates
-
     let $template = $('#nav-music');
     if (!$template.length) $template = $('#nav-buttons').children('li').first();
     if (!$template.length) return;
