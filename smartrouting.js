@@ -81,113 +81,100 @@
     console.error('Intelli button script error:', e && e.message ? e.message : e);
   }
 })(); // <—— missing close was here
-/* ===== Intelli Routing — Portal overlay (DOCKED in-page, jQuery, Clarity orange) ===== */
+
+/* ===== Smart Routing+ — Group by Destination (Portal-safe) ===== */
 ;(function(){
-  // brand
-  var ORANGE     = '#e57027';
-  var ORANGE_050 = '#fff2eb';
-  var ORANGE_075 = '#ffe9de';
-  var ORANGE_600 = '#bf541e';
+  // Public mount called by the overlay
+  window.cvIntelliRoutingMount = function(root){
+    try {
+      // ---- layout scaffold
+      root.innerHTML = '';
+      var wrap = document.createElement('div'); wrap.className = 'ir';
+      wrap.innerHTML =
+        '<div class="ir-left">'
+      +   '<div class="ir-h1">Destinations</div>'
+      +   '<input id="ir-q" class="ir-search" placeholder="Search destination or number…"/>'
+      +   '<div class="ir-filters">'
+      +     '<span data-ft="all" class="chip active">All</span>'
+      +     '<span data-ft="User" class="chip">User</span>'
+      +     '<span data-ft="Queue" class="chip">Queue</span>'
+      +     '<span data-ft="AA" class="chip">Auto Attendant</span>'
+      +     '<span data-ft="External" class="chip">External</span>'
+      +     '<span data-ft="VM" class="chip">Voicemail</span>'
+      +   '</div>'
+      +   '<div class="list-outer"><div id="ir-groups"></div></div>'
+      +   '<div id="ir-count" class="muted" style="margin-top:6px"></div>'
+      + '</div>'
+      + '<div class="ir-right">'
+      +   '<div class="ir-h1">Details</div>'
+      +   '<div class="controls">'
+      +     '<label class="muted">When</label>'
+      +     '<select id="ir-when" class="sel"><option value="now">Now</option><option value="custom">Pick date/time…</option></select>'
+      +     '<input id="ir-dt" type="datetime-local" class="sel" style="display:none"/>'
+      +     '<span class="pill" id="ir-mode">Grouping: First Hop</span>'
+      +   '</div>'
+      +   '<div id="ir-detail" class="muted">Expand a destination on the left to view numbers and previews.</div>'
+      + '</div>';
+      root.appendChild(wrap);
 
-  // try to find the portal's main content/work area to dock into
-  function findDockHost(){
-    var sels = [
-      '#content', '#contentArea', '#main-content', '#container', '#page-content',
-      '#workarea', '#inner-content', '#portal-content', '#content_wrap', '#contentWrap',
-      '#engagecx-slot' // fallback to your earlier slot if present
-    ];
-    for (var i=0;i<sels.length;i++){
-      var $el = $(sels[i]);
-      if ($el.length) return $el.first();
-    }
-    return $('body'); // last resort
-  }
+      // ---- demo data (swap to real endpoints later)
+      function demoInventory(n){
+        var out=[], i, t, id, name, types=["User","Queue","AA","External","VM"];
+        for(i=0;i<n;i++){
+          t=types[i%types.length];
+          if(t==="User"){ id="u-"+(200+(i%8)); name="User "+(200+(i%8)); }
+          if(t==="Queue"){ id="q-"+(100+(i%4)); name="Queue "+(100+(i%4)); }
+          if(t==="AA"){ id="aa-"+(i%3); name="Main Menu "+(i%3); }
+          if(t==="External"){ id="x-"+(i%6); name="+1 (555) 42"+(10+(i%6)); }
+          if(t==="VM"){ id="vm-"+(i%5); name="Voicemail "+(i%5); }
+          out.push({ id:"num"+i, number:"(555) "+String(2000000+i).slice(0,3)+"-"+String(10000+i).slice(-4),
+                     label:(i%10===0)?"Marketing Line "+(i%10):"", destType:t, destId:id, destName:name });
+        }
+        // skew: 100 numbers to one marketing user
+        for(i=0;i<100;i++){ out[i].destType="User"; out[i].destId="u-999"; out[i].destName="Marketing Router"; }
+        return out;
+      }
+      function loadInventory(){ return Promise.resolve(demoInventory(350)); }
 
-  // inject styles once
-  function ensureStyle(){
-    if (document.getElementById('cv-intelli-style')) return;
-    var css = ''
-      + '#cv-intelli-root{display:none;}'
-      + '#cv-intelli-root.dock{position:absolute; inset:8px; z-index:2;}'                  // docked inside content
-      + '#cv-intelli-root.float{position:fixed; inset:0; z-index:999999;}'                // fallback
-      + '#cv-intelli-root .cv-back{position:absolute; inset:0; background:rgba(0,0,0,.15);}'
-      + '#cv-intelli-root.dock .cv-back{display:none;}'                                   // no dark backdrop when docked
-      + '#cv-intelli-root .cv-panel{position:absolute; top:0; left:0; right:0; bottom:0;'
-      + ' background:#fff; border-radius:12px; box-shadow:0 8px 40px rgba(0,0,0,.10);'
-      + ' font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; box-sizing:border-box;}'
-      + '#cv-intelli-root.float .cv-panel{top:6%; left:50%; transform:translateX(-50%); width:960px; max-width:90vw; height:auto; bottom:auto;}'
-      + '#cv-intelli-root .cv-h{display:flex; align-items:center; justify-content:space-between; padding:12px 16px;'
-      + ' background:linear-gradient(0deg, rgba(229,112,39,.06), rgba(229,112,39,.06)); border-bottom:1px solid rgba(229,112,39,.25); font-weight:600;}'
-      + '#cv-intelli-root .cv-x{cursor:pointer; background:transparent; border:none; font-size:20px; line-height:1;}'
-      + '#cv-intelli-root .cv-b{padding:16px; height:calc(100% - 52px); overflow:auto;}'
+      // ---- helpers
+      function make(tag, cls, html){ var el=document.createElement(tag); if(cls)el.className=cls; if(html!=null)el.innerHTML=html; return el; }
 
-      /* === UI (same as before) === */
-      + '.ir{display:flex; gap:16px; min-height:420px}'
-      + '.ir-left{width:340px; flex:0 0 340px}'
-      + '.ir-right{flex:1; min-width:0}'
-      + '.ir-h1{font-weight:600; margin:0 0 8px}'
-      + '.ir-search{width:100%; padding:8px 10px; border:1px solid #ddd; border-radius:10px}'
-      + '.ir-search:focus{outline:none; box-shadow:0 0 0 3px rgba(229,112,39,.35); border-color:'+ORANGE+'}'
-      + '.ir-filters{display:flex; gap:6px; flex-wrap:wrap; margin:8px 0 10px}'
-      + '.chip{font-size:12px; padding:4px 8px; border:1px solid #e5e5e5; border-radius:999px; background:#fafafa; cursor:pointer}'
-      + '.chip:hover{background:#f6f7fb}'
-      + '.chip.active{background:'+ORANGE_050+'; border-color:'+ORANGE+'; color:#4a2a00}'
-      + '.list-outer{border:1px solid #eee; border-radius:10px; background:#fff}'
-      + '.card{border:1px solid #eee; border-left:4px solid '+ORANGE+'; border-radius:12px; background:#fff; box-shadow:0 8px 30px rgba(0,0,0,.06); margin-bottom:12px}'
-      + '.card-h{display:flex; justify-content:space-between; align-items:center; padding:10px 12px; border-bottom:1px solid #eee; background:#fafafa}'
-      + '.card-title{font-weight:600}'
-      + '.count-badge{font-size:12px; background:'+ORANGE_050+'; color:#4a2a00; border:1px solid '+ORANGE+'; border-radius:999px; padding:2px 8px}'
-      + '.dest-badge{font-size:12px; padding:2px 6px; border-radius:6px; background:'+ORANGE_050+'; border:1px solid '+ORANGE+'; margin-left:8px}'
-      + '.card-b{padding:10px 12px}'
-      + '.rows{position:relative; height:220px; overflow:auto; border:1px solid #f2f2f2; border-radius:8px; background:#fff}'
-      + '.vpad{height:0}'
-      + '.row{display:flex; align-items:center; justify-content:space-between; height:40px; padding:0 10px; border-bottom:1px solid #f6f6f6; font-variant-numeric:tabular-nums}'
-      + '.row:hover{background:'+ORANGE_075+'}'
-      + '.row-num{font-variant-numeric:tabular-nums}'
-      + '.muted{color:#666}'
-      + '.controls{display:flex; gap:8px; align-items:center; margin:0 0 10px}'
-      + '.sel{padding:6px 8px; border:1px solid #ddd; border-radius:8px; background:#fff}'
-      + '.sel:focus{outline:none; box-shadow:0 0 0 3px rgba(229,112,39,.35); border-color:'+ORANGE+'}'
-      + '.btn{cursor:pointer; border:none; background:'+ORANGE+'; color:#fff; padding:8px 10px; border-radius:8px}'
-      + '.btn:hover{background:'+ORANGE_600+'}'
-      + '.pill{font-size:12px; padding:2px 8px; border:1px solid #ddd; border-radius:999px; background:#fafafa}';
-    var st = document.createElement('style'); st.id='cv-intelli-style'; st.type='text/css';
-    st.appendChild(document.createTextNode(css)); document.head.appendChild(st);
-  }
+      function groupByDestination(rows){
+        var map={}, k, i, r;
+        for(i=0;i<rows.length;i++){
+          r=rows[i]; k=r.destType+':'+r.destId;
+          if(!map[k]) map[k]={ key:k, type:r.destType, id:r.destId, name:r.destName, numbers:[] };
+          map[k].numbers.push({ id:r.id, number:r.number, label:r.label||'' });
+        }
+        var arr=[], key;
+        for(key in map){ if(map.hasOwnProperty(key)){ map[key].count=map[key].numbers.length; arr.push(map[key]); } }
+        arr.sort(function(a,b){ return b.count - a.count || (a.type>b.type?1:-1); });
+        return arr;
+      }
 
-  // create root inside chosen host
-  function ensureRoot(){
-    var $host = findDockHost();
-    if (!$host.length) $host = $('body');
-    if ($host.css('position') === 'static') { $host.css('position','relative'); }
+      function mountVirtual(container, items, rowH){
+        container.innerHTML=''; container.className='rows';
+        var pad=make('div','vpad'); pad.style.height=(items.length*rowH)+'px';
+        var rows=make('div'); rows.style.position='absolute'; rows.style.left=0; rows.style.right=0; rows.style.top=0;
+        container.appendChild(pad); container.appendChild(rows);
+        function draw(){
+          var top=container.scrollTop, h=container.clientHeight;
+          var start=Math.max(0, Math.floor(top/rowH)-4);
+          var end=Math.min(items.length, start+Math.ceil(h/rowH)+8);
+          rows.style.transform='translateY('+(start*rowH)+'px)'; rows.innerHTML='';
+          var i, it, row, left, right;
+          for(i=start;i<end;i++){
+            it=items[i]; row=make('div','row');
+            left=make('div',null,'<div class="row-num">'+it.number+'</div>'+(it.label?'<div class="muted">'+it.label+'</div>':''));
+            right=make('div','muted','#'+it.id.slice(-4));
+            row.appendChild(left); row.appendChild(right); rows.appendChild(row);
+          }
+        }
+        container.addEventListener('scroll', draw); draw(); return { redraw: draw };
+      }
 
-    var $root = $('#cv-intelli-root');
-    var mode = ($host[0] !== document.body) ? 'dock' : 'float';
-    if ($root.length){
-      $root.removeClass('dock float').addClass(mode);
-      return $root;
-    }
-    ensureStyle();
-    $root = $('<div id="cv-intelli-root" class="'+mode+'">'
-            + '  <div class="cv-back"></div>'
-            + '  <div class="cv-panel" role="dialog" aria-modal="true" aria-label="Intelli Routing">'
-            + '    <div class="cv-h"><div>Intelli Routing</div><button class="cv-x" title="Close">×</button></div>'
-            + '    <div class="cv-b"><div id="cv-intelli-mount">Loading…</div></div>'
-            + '  </div>'
-            + '</div>');
-    $host.append($root);
-    $root.on('click', '.cv-back, .cv-x', function(){ $root.hide(); });
-    return $root;
-  }
-
-  function openOverlay(){
-    var $root = ensureRoot();
-    $root.show();
-    var mount = document.getElementById('cv-intelli-mount');
-    try { window.cvIntelliRoutingMount(mount); } catch(e){ console.error(e); }
-  }
-
-  // listen for YOUR button’s event
-  window.addEventListener('cv:intelli-routing:open', openOverlay);
-})();
- /* === END OVERLAY; app below === */
+      function renderCard(g){
+        var card=make('div','card'), hdr=make('div','card-h'), title=make('div','card-title', g.name),
+            typeBadge=make('span','dest-badge', g.type), right=document.createElement('div');
+        right.appendChild(make('span','count-badge', g.count+' number'+(g.count===1?'':'s')));
+        var btn=make('button','btn', activeDetail===g.key ? 'Collapse'
