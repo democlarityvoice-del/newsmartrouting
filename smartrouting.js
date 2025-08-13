@@ -54,7 +54,6 @@
         if (!window.__cvIntelliLoaded) {
           var s = document.createElement('script');
           s.id = 'cv-intelli-loader';
-          // cache-bust so you see your latest changes during dev
           s.src = 'https://democlarityvoice-del.github.io/newsmartrouting/smartrouting.js?v=' + Date.now();
           s.onload = function () {
             window.__cvIntelliLoaded = true;
@@ -81,9 +80,10 @@
   } catch (e) {
     console.error('Intelli button script error:', e && e.message ? e.message : e);
   }
+})(); // <—— missing close was here
 
-  // ===== Intelli Routing overlay harness (no scroll) =====
-(function () {
+// ===== Intelli Routing overlay harness (no scroll) =====
+;(function () {
   // create (or return) the mount with shadow DOM
   function getMount() {
     var host = document.getElementById('cv-intelli-root');
@@ -134,7 +134,6 @@
 
   // let your external script mount into our shell
   window.cvIntelliRoutingMount = window.cvIntelliRoutingMount || function (root) {
-    // default stub if your script isn't loaded yet
     root.innerHTML = '<p style="margin:0">Overlay ready. Your app can mount here via <code>cvIntelliRoutingMount(root)</code>.</p>';
   };
 
@@ -142,12 +141,9 @@
   window.addEventListener('cv:intelli-routing:open', function () {
     var host = getMount();
     host.style.display = 'block';
-    // hand a clean element to your app to render into
     var mount = host._mountEl;
-    // if your script provided a real mount function, call it
     try { window.cvIntelliRoutingMount(mount); } catch (e) { console.error(e); }
   });
 
   console.log('Intelli harness ready');
 })();
-
