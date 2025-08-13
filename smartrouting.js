@@ -257,17 +257,23 @@ function ensureRoot(){
 }
 
 
-  // ------- Banner swap helpers (robust) -------
+// ------- Banner swap helpers (robust) -------
 var _bannerEls = [], _origBannerTexts = [];
 
 function collectBannerEls(){
   _bannerEls = []; _origBannerTexts = [];
   var sels = [
-    '#page-title h1', '#pageTitle', '.page-title h1', '.pageTitle',
-    '.content-title h1', '.section-title h1', '.titlebar h1',
-    '.breadcrumbs + h1', '.breadcrumb .active',
-    '.module-title h1', '.module-title', '.tab-title', '.tabs .current',
-    '.home h1', '#home h1', '#content h1', '#content h2'
+    // common title spots
+    '#page-title h1','#pageTitle','.page-title h1','.pageTitle',
+    '.content-title h1','.section-title h1','.titlebar h1',
+    '.breadcrumbs + h1','.breadcrumb .active',
+    '.module-title h1','.module-title','.tab-title','.tabs .current',
+    // netsapiens/portal variants seen in the wild
+    '.ns-content-header .title','.ns-header .title','.scroll-header .title',
+    '.sticky-title','.top-bar h1','#breadcrumb h1',
+    '.page_header h1','.headerbar h1',
+    // fallbacks
+    '.home h1','#home h1','#content h1','#content h2'
   ];
   var seen = new Set();
   for (var i=0;i<sels.length;i++){
@@ -276,29 +282,50 @@ function collectBannerEls(){
       var el = nodes[j]; if (seen.has(el)) continue;
       var txt = (el.textContent||'').trim();
       var box = el.getBoundingClientRect();
-      if (txt && box.top < 220 && box.width > 120) {
-        _bannerEls.push(el); _origBannerTexts.push(txt); seen.add(el);
-      }
+      var vis = el.offsetParent !== null && box.width > 100 && box.top < 260;
+      if (txt && vis) { _bannerEls.push(el); _origBannerTexts.push(txt); seen.add(el); }
     }
   }
-  // Fallback: visible elements that literally say “Home” near the top
+  // Ultimate fallback: any visible element near the top that literally says "Home"
   if (!_bannerEls.length){
-    var all = document.querySelectorAll('h1,h2,.title,.titlebar,.tab-title,.module-title');
+    var all = document.querySelectorAll('body *');
+    var best = null, bestBox = null;
     for (var k=0;k<all.length;k++){
-      var t=(all[k].textContent||'').trim();
-      var b=all[k].getBoundingClientRect();
-      if (t==='Home' && b.top<260 && b.width>100){ _bannerEls.push(all[k]); _origBannerTexts.push(t); }
+      var e = all[k];
+      if (!e || !e.textContent) continue;
+      var t = e.textContent.replace(/\s+/g,' ').trim();
+      if (t.toLowerCase() === 'home'){
+        var b = e.getBoundingClientRect();
+        if (e.offsetParent !== null && b.top < 260 && b.width > 100){
+          if (!best || b.top < bestBox.top) { best = e; bestBox = b; }
+        }
+      }
     }
+    if (best){ _bannerEls.push(best); _origBannerTexts.push(best.textContent.trim()); }
   }
 }
 
 function swapBanner(on){
+  // refresh targets on each open to handle SPA reflows
+  if (on) { _bannerEls = []; _origBannerTexts = []; }
   if (!_bannerEls.length) collectBannerEls();
   for (var i=0;i<_bannerEls.length;i++){
     var el=_bannerEls[i]; if (!el) continue;
     el.textContent = on ? 'Intelli Routing' : (_origBannerTexts[i] || el.textContent);
   }
 }
+
+// (optional) manual override if you discover the exact selector:
+//   cvIntelliForceBanner('.ns-content-header .title')
+window.cvIntelliForceBanner = function(sel){
+  var el = document.querySelector(sel);
+  if (el){
+    _bannerEls = [el];
+    _origBannerTexts = [el.textContent.trim()];
+    swapBanner(true);
+  }
+};
+
 
 
   function openOverlay(){
