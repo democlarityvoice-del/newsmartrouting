@@ -203,15 +203,70 @@ function ensureStyle(){
     return root;
   }
 
-  function openOverlay(){
-    var root=ensureRoot();
-    root.style.display='block';
-    var mount=document.getElementById('cv-intelli-mount');
-    if (typeof window.cvIntelliRoutingMount==='function'){
-      try { window.cvIntelliRoutingMount(mount); } catch(e){ console.error('[Intelli] mount error:', e); }
-    } else {
-      console.warn('[Intelli] cvIntelliRoutingMount not a function');
+  // REPLACE your entire renderCard (or renderGroupCard) with this:
+function renderCard(g){
+  var card = make('div','card');
+  var bar = make('div','left-bar'); card.appendChild(bar);
+
+  var hdr = make('div','card-h');
+
+  var left = make('div','hdr-left');
+  left.appendChild(make('div','card-title', g.name));
+  left.appendChild(make('span','dest-badge', g.type));
+  hdr.appendChild(left);
+
+  var right = make('div','hdr-right');
+  right.appendChild(make('span','count-badge', g.count + ' number' + (g.count===1?'':'s')));
+  var btn = make('button','btn', activeDetail===g.key ? 'Collapse' : 'Expand');
+  right.appendChild(btn);
+  hdr.appendChild(right);
+
+  card.appendChild(hdr);
+
+  var body = make('div','card-b');
+  if (activeDetail===g.key) {
+    var preview = make('div','muted','');
+    if (g.type==='User'){ preview.innerHTML='<b>User:</b> top rule <i>Business Hours</i> → AA <b>Main Menu</b>'; }
+    else if (g.type==='Queue'){ preview.innerHTML='<b>Queue:</b> round-robin, timeout 60s → VM <b>Sales VM</b>'; }
+    else if (g.type==='AA'){ preview.innerHTML='<b>AA keys:</b> 1: Sales · 2: Support · timeout: Main VM'; }
+    else { preview.innerHTML='<b>Direct:</b> '+g.type; }
+    body.appendChild(preview);
+
+    var acts = make('div','card-actions');
+    var exportBtn = make('button','btn','Export CSV');
+    exportBtn.onclick = function(){
+      var csv='Number,Label\n', i, n, lbl;
+      for(i=0;i<g.numbers.length;i++){ n=g.numbers[i]; lbl=(n.label||'').replace(/"/g,'""'); csv+='"'+n.number+'","'+lbl+'"\n'; }
+      var blob=new Blob([csv],{type:'text/csv'}), url=URL.createObjectURL(blob), a=document.createElement('a');
+      a.href=url; a.download=(g.type+' '+g.name+' numbers.csv').replace(/\s+/g,'_'); a.click(); setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    };
+    acts.appendChild(exportBtn);
+    body.appendChild(acts);
+
+    var rows = make('div','rows'); body.appendChild(rows);
+    // NOTE: this calls your existing virtualizer name
+    mountVirtual(rows, g.numbers, 40);
+  } else {
+    body.appendChild(make('div','muted','Click expand to view numbers and previews.'));
+  }
+  card.appendChild(body);
+
+  btn.onclick = function(){
+    activeDetail = (activeDetail===g.key) ? null : g.key;
+    applyFilters();
+    var detail=document.getElementById('ir-detail');
+    if(activeDetail===g.key){
+      detail.innerHTML = '<div class="card"><div class="card-h"><div class="hdr-left"><div class="card-title">'+g.name+
+        '</div><span class="dest-badge">'+g.type+'</span></div></div><div class="card-b">This destination has <b>'+g.count+
+        '</b> numbers.<br/><span class="muted">Use Export CSV for the full list. “When” affects trace later.</span></div></div>';
+    } else if(!activeDetail){
+      detail.innerHTML = 'Expand a destination on the left to view numbers and previews.'; detail.className='muted';
     }
+  };
+
+  return card;
+}
+
   }
 
   window.addEventListener('cv:intelli-routing:open', openOverlay, false);
