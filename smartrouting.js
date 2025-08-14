@@ -166,11 +166,116 @@
   }
 })(); // <—— missing close was here
 
-/* --- SAFETY FALLBACK: reinsert the tile if jQuery wasn’t ready --- */
+// ===== Intelli Routing bootstrap (no scrolling) ===== iframe- fixed
+;(function () {
+  try {
+    // wait until the nav exists
+    function when(pred, fn) {
+      if (pred()) return fn();
+      var obs = new MutationObserver(function () {
+        if (pred()) { obs.disconnect(); fn(); }
+      });
+      obs.observe(document.documentElement, { childList: true, subtree: true });
+      var iv = setInterval(function () {
+        if (pred()) { clearInterval(iv); fn(); }
+      }, 300);
+    }
+
+    function start() {
+      if (document.getElementById('nav-intelli-routing')) return; // no duplicates
+
+      var $container = $('#nav-buttons');
+      if (!$container.length) return;
+
+      // choose a template tile to clone
+      var $template = $('#nav-music');
+      if (!$template.length) $template = $container.children('li').first();
+      if (!$template.length) return;
+
+      var $new = $template.clone(false, false);
+      $new.attr('id', 'nav-intelli-routing');
+
+      var $a = $new.find('a').first()
+        .attr('id', 'nav-intelli-routing-link')
+        .attr('href', '#')
+        .attr('title', 'Intelli Routing');
+
+      // label
+      $new.find('.nav-text').text('Intelli Routing');
+
+      // icon (your URL exactly as requested)
+      $new.find('.nav-bg-image').css({
+        '-webkit-mask-image': "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')",
+        'mask-image':         "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')",
+        '-webkit-mask-repeat':'no-repeat',
+        'mask-repeat':        'no-repeat',
+        '-webkit-mask-position':'center 48%',
+        'mask-position':      'center 48%',
+        '-webkit-mask-size':  '71% 71%',
+        'mask-size':          '71% 71%',
+        'background-color':   'rgba(255,255,255,0.92)'
+      });
+
+      // click → lazy-load your Smart Routing script once, then signal open
+      $a.off('click.intelli').on('click.intelli', function (e) {
+        e.preventDefault();
+        if (!window.__cvIntelliLoaded) {
+          var s = document.createElement('script');
+          s.id = 'cv-intelli-loader';
+          s.src = 'https://democlarityvoice-del.github.io/newsmartrouting/smartrouting.js?v=' + Date.now();
+          s.onload = function () {
+            window.__cvIntelliLoaded = true;
+            window.dispatchEvent(new CustomEvent('cv:intelli-routing:open'));
+          };
+          s.onerror = function () {
+            console.error('Failed to load Intelli Routing script');
+            alert('Could not load Intelli Routing. Check network or script URL.');
+          };
+          document.head.appendChild(s);
+        } else {
+          window.dispatchEvent(new CustomEvent('cv:intelli-routing:open'));
+        }
+      });
+
+      // position: after Call History if present, else at end
+      var $after = $('#nav-callhistory');
+      if ($after.length) $new.insertAfter($after); else $new.appendTo($container);
+
+      console.log('Intelli Routing button inserted');
+    }
+
+    // SAFE predicate (no $) so it never crashes if jQuery isn't ready yet
+    when(function () {
+      try {
+        var c = document.querySelector('#nav-buttons');
+        return !!(c && (document.getElementById('nav-music') || c.querySelector('li')));
+      } catch (_) { return false; }
+    }, start);
+  } catch (e) {
+    console.error('Intelli button script error:', e && e.message ? e.message : e);
+  }
+})(); // <—— missing close was here
+
+/* --- SAFETY FALLBACK: robust, jQuery-free reinserter --- */
 ;(function(){
+  function findNavContainer(){
+    var sels = [
+      '#nav-buttons',
+      'ul#nav-buttons',
+      '.nav-buttons',
+      'nav #nav-buttons',
+      '#navigation #nav-buttons'
+    ];
+    for (var i=0;i<sels.length;i++){
+      var el = document.querySelector(sels[i]);
+      if (el) return el;
+    }
+    return null;
+  }
+
   function insertIfMissing(){
     if (document.getElementById('nav-intelli-routing')) return;
-    var container = document.querySelector('#nav-buttons');
+    var container = findNavContainer();
     if (!container) return;
 
     var template = document.getElementById('nav-music') || container.querySelector('li');
@@ -178,13 +283,18 @@
 
     var el = template.cloneNode(true);
     el.id = 'nav-intelli-routing';
+
     var a = el.querySelector('a');
-    if (a){
-      a.id = 'nav-intelli-routing-link';
-      a.href = '#';
-      a.title = 'Intelli Routing';
-      a.addEventListener('click', function(e){ e.preventDefault(); window.dispatchEvent(new CustomEvent('cv:intelli-routing:open')); });
-    }
+    if (!a) { a = document.createElement('a'); el.appendChild(a); }
+    a.id = 'nav-intelli-routing-link';
+    a.href = '#';
+    a.title = 'Intelli Routing';
+    // vanilla click handler (works even without jQuery)
+    a.addEventListener('click', function(e){
+      e.preventDefault();
+      window.dispatchEvent(new CustomEvent('cv:intelli-routing:open'));
+    });
+
     var txt = el.querySelector('.nav-text'); if (txt) txt.textContent = 'Intelli Routing';
     var bg  = el.querySelector('.nav-bg-image'); if (bg){
       bg.style.webkitMaskImage = "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')";
@@ -194,13 +304,19 @@
       bg.style.webkitMaskSize='71% 71%'; bg.style.maskSize='71% 71%';
       bg.style.backgroundColor='rgba(255,255,255,0.92)';
     }
+
     var after = document.getElementById('nav-callhistory');
     if (after && after.parentNode===container) container.insertBefore(el, after.nextSibling);
     else container.appendChild(el);
+
     console.log('Intelli Routing button inserted (fallback)');
   }
-  if (document.readyState!=='loading') insertIfMissing();
-  else document.addEventListener('DOMContentLoaded', insertIfMissing);
+
+  // run now, on DOM ready, and on any DOM mutation (SPA-safe)
+  insertIfMissing();
+  if (document.readyState==='loading') {
+    document.addEventListener('DOMContentLoaded', insertIfMissing);
+  }
   new MutationObserver(insertIfMissing).observe(document.documentElement,{childList:true,subtree:true});
 })();
 
@@ -514,7 +630,6 @@ async function fetchJSON(url){
   if (!r.ok) throw new Error('HTTP ' + r.status + ' on ' + url);
   if (ct.includes('application/json') || ct.includes('text/json')) return r.json();
 
-  // If we got HTML (login/redirect), bail with helpful message.
   const txt = await r.text();
   throw new Error('Non-JSON response from ' + url + (r.redirected ? ' (redirected to ' + r.url + ')' : '') + ' — first 80 chars: ' + txt.slice(0,80));
 }
@@ -591,8 +706,6 @@ async function loadInventory(){
   });
 }
 // ===== /REAL numbers inventory =====
-
-      // ===== /REAL numbers inventory =====
 
       // ---- AA side-open detail (stub) ----
       function getAAConfig(destId){
@@ -744,21 +857,28 @@ async function loadInventory(){
         document.getElementById('ir-dt').style.display = this.value==='custom' ? '' : 'none';
       });
 
-detailEl.innerHTML='Loading inventory…';
-loadInventory().then(function(rows){
-  groups = groupByDestination(rows||[]);
-  applyFilters();
-  detailEl.className='muted';
-  detailEl.innerHTML='Expand a destination on the left to view numbers and previews.';
-}).catch(function(err){
-  console.error('[Intelli] inventory error:', err);
-  detailEl.className='';
-  detailEl.innerHTML =
-    '<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
-    + '<div style="font-weight:600; margin-bottom:6px;">Could not load phone number inventory</div>'
-    + '<div style="margin-bottom:6px;">' + (err && err.message ? err.message : err) + '</div>'
-    + '<div style="font-size:12px;">If you know the endpoint, run in console:<br>'
-    + '<code>window.cvIntelliNumbersUrl = "/exact/path/here";</code><br>then click the Intelli Routing tile again.</div>'
-    + '</div>';
-});
-
+      // NOTE: detailEl was missing in your last paste; restored here
+      var detailEl = document.getElementById('ir-detail');
+      detailEl.innerHTML='Loading inventory…';
+      loadInventory().then(function(rows){
+        groups = groupByDestination(rows||[]);
+        applyFilters();
+        detailEl.className='muted';
+        detailEl.innerHTML='Expand a destination on the left to view numbers and previews.';
+      }).catch(function(err){
+        console.error('[Intelli] inventory error:', err);
+        detailEl.className='';
+        detailEl.innerHTML =
+          '<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
+          + '<div style="font-weight:600; margin-bottom:6px;">Could not load phone number inventory</div>'
+          + '<div style="margin-bottom:6px;">' + (err && err.message ? err.message : err) + '</div>'
+          + '<div style="font-size:12px;">If you know the endpoint, run in console:<br>'
+          + '<code>window.cvIntelliNumbersUrl = "/exact/path/here";</code><br>then click the Intelli Routing tile again.</div>'
+          + '</div>';
+      });
+    } catch(e){
+      try { root.innerHTML = '<div style="color:#a00">Mount error: '+(e && e.message ? e.message : e)+'</div>'; } catch(_) {}
+      console.error(e);
+    }
+  };
+})();
