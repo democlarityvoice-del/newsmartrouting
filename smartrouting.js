@@ -215,14 +215,14 @@
       '#cv-intelli-root{display:none; --cv-accent:'+DEFAULT_ACCENT+'; --cv-tint:'+DEFAULT_TINT+';}',
       '#cv-intelli-root.dock{position:absolute; inset:0; z-index:9999}',
       '#cv-intelli-root.float{position:fixed; inset:0; z-index:999999}',
-      '#cv-intelli-root .cv-back{position:absolute; inset:0; background:#fff; opacity:1}',
+      '#cv-intelli-root .cv-back{position:absolute; inset:0; background:#fff; opacity:1}', /* solid backdrop */
       '#cv-intelli-root .cv-panel{position:absolute; inset:0; background:#fff; box-sizing:border-box; font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}',
       '#cv-intelli-root.float .cv-panel{margin:4% auto; max-width:960px; height:auto; border-radius:12px; box-shadow:0 8px 40px rgba(0,0,0,.12)}',
       '#cv-intelli-root .cv-h{display:flex; align-items:center; justify-content:space-between; padding:12px 16px; background:linear-gradient(180deg, var(--cv-tint), #fff); border-bottom:1px solid rgba(229,112,39,.22); font-weight:600}',
       '#cv-intelli-root .cv-x{cursor:pointer; background:transparent; border:none; font-size:20px; line-height:1}',
       '#cv-intelli-root .cv-b{padding:16px; height:calc(100% - 52px); overflow:auto}',
 
-      /* UI */
+      /* ===== scoped UI ===== */
       '#cv-intelli-root .ir{display:flex; gap:16px; min-height:420px}',
       '#cv-intelli-root .ir-left{width:340px; flex:0 0 340px}',
       '#cv-intelli-root .ir-right{flex:1; min-width:0}',
@@ -256,7 +256,7 @@
       '#cv-intelli-root .btn:hover{filter:brightness(.95)}',
       '#cv-intelli-root .pill{font-size:12px; padding:2px 8px; border:1px solid #ddd; border-radius:999px; background:#fafafa}',
 
-      /* AA dial pad (right side) */
+      /* ===== AA dial pad (right side) ===== */
       '#cv-intelli-root .dial{border:1px solid #eee; border-radius:12px; background:#fff; overflow:hidden}',
       '#cv-intelli-root .dial-h{padding:10px 12px; background:#fafafa; border-bottom:1px solid #eee; font-weight:600}',
       '#cv-intelli-root .dial-keys{display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:12px}',
@@ -417,7 +417,6 @@
   window.cvIntelliOpen = openOverlay;
 })();
 
-
 /* ===== Smart Routing+ — Group by Destination (Portal-safe, vanilla JS) ===== */
 ;(function(){
   window.cvIntelliRoutingMount = function(root){
@@ -427,7 +426,7 @@
       // ---- helper (scoped) ----
       function make(tag, cls, html){ var el=document.createElement(tag); if(cls) el.className=cls; if(html!=null) el.innerHTML=html; return el; }
 
-      // ---------- helpers that were missing ----------
+      // ---------- helpers ----------
       function groupByDestination(rows){
         var map={}, out=[];
         for (var i=0;i<rows.length;i++){
@@ -489,7 +488,47 @@
       + '</div>';
       root.appendChild(wrap);
 
-      // --- real numbers inventory + normalizers ---
+      // ===== REAL numbers inventory: auto-detect endpoint (override with window.cvIntelliNumbersUrl) =====
+      var NUMBERS_URL = window.cvIntelliNumbersUrl || null;
+
+      async function fetchJSON(url){
+        const r = await fetch(url, { credentials: 'same-origin' });
+        if (!r.ok) throw new Error('HTTP '+r.status+' on '+url);
+        const ct = (r.headers.get('content-type')||'').toLowerCase();
+        if (!ct.includes('json')) {
+          // try parse text as json (some portals return text/html)
+          const txt = await r.text();
+          return JSON.parse(txt);
+        }
+        return r.json();
+      }
+
+      async function probeNumbersUrl(){
+        if (NUMBERS_URL) return NUMBERS_URL;
+        const candidates = [
+          '/portal/inventory/numbers?format=json',
+          '/portal/inventory/dids?format=json',
+          '/portal/inventory/tns?format=json',
+          '/portal/ajax/numbers',
+          '/portal/ajax/dids',
+          '/portal/api/v1/numbers',
+          '/portal/api/numbers',
+          '/api/numbers',
+          '/ns-api/numbers',
+          '/portal/number/list?json=1'
+        ];
+        for (var i=0;i<candidates.length;i++){
+          var base=candidates[i];
+          try {
+            var test = base + (base.includes('?')?'&':'?') + 'limit=25';
+            var data = await fetchJSON(test);
+            var list = Array.isArray(data) ? data : (data.items || data.results || data.data || data.numbers);
+            if (Array.isArray(list)) { console.log('[Intelli] numbers endpoint:', base); NUMBERS_URL = base; return NUMBERS_URL; }
+          } catch(e){ /* try next */ }
+        }
+        throw new Error('No numbers endpoint responded with JSON');
+      }
+
       function formatTN(s){
         s = (s||'').replace(/[^\d]/g,'');
         if (s.length===11 && s[0]==='1') s = s.slice(1);
@@ -514,6 +553,7 @@
         if (t==='VM')    return x.vm_name   || x.owner_name || x.name || ('Voicemail ' +(x.owner_id||x.vm_id||''));
         return x.route_name || x.trunk_name || x.dest || x.name || 'External';
       }
+
       function demoInventory(n){
         var out=[], i, t, id, name, types=["User","Queue","AA","External","VM"];
         for(i=0;i<n;i++){
@@ -529,30 +569,31 @@
         for(i=0;i<100;i++){ out[i].destType="User"; out[i].destId="u-999"; out[i].destName="Marketing Router"; }
         return out;
       }
-      function loadInventory(){
-        var url = '/portal/api/numbers?limit=5000';
-        return fetch(url, { credentials: 'include' })
-          .then(function(r){ if (!r.ok) throw new Error('numbers '+r.status); return r.json(); })
-          .then(function(data){
-            var list = Array.isArray(data) ? data : (data.items || data.data || data.results || data.numbers || []);
-            if (!Array.isArray(list)) list = [];
-            return list.map(function(x, i){
-              var destType = x.dest_type || x.owner_type || x.type || x.destination_type;
-              var destId   = x.dest_id   || x.owner_id   || x.destination_id;
-              var destName = x.dest_name || x.owner_name || x.destination_name;
-              return {
-                id:       x.id || x.uuid || ('num'+i),
-                number:   formatTN(x.number || x.tn || x.did || x.dnis || ''),
-                label:    x.label || x.alias || x.description || '',
-                destType: mapDestType(destType),
-                destId:   String(destId || ''),
-                destName: destName || mapDestName(x, destType)
-              };
-            });
-          })
-          .catch(function(err){ console.error('[Intelli] loadInventory failed:', err); return demoInventory(80); });
+
+      async function loadInventory(){
+        try {
+          var base = await probeNumbersUrl();
+          var raw  = await fetchJSON(base + (base.includes('?')?'&':'?') + 'limit=5000');
+          var list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
+          return (list||[]).map(function(x, i){
+            var destType = x.dest_type || x.owner_type || x.type || x.destination_type;
+            var destId   = x.dest_id   || x.owner_id   || x.destination_id;
+            var destName = x.dest_name || x.owner_name || x.destination_name;
+            return {
+              id:       x.id || x.uuid || ('num'+i),
+              number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || ''),
+              label:    x.label || x.alias || x.description || x.name || '',
+              destType: mapDestType(destType),
+              destId:   String(destId || ''),
+              destName: destName || mapDestName(x, destType)
+            };
+          });
+        } catch(e){
+          console.warn('[Intelli] loadInventory falling back to demo:', e && e.message ? e.message : e);
+          return demoInventory(200);
+        }
       }
-      // --- /real numbers ---
+      // ===== /REAL numbers inventory =====
 
       // ---- AA side-open detail (stub) ----
       function getAAConfig(destId){
