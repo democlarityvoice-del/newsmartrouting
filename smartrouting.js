@@ -744,17 +744,21 @@ async function loadInventory(){
         document.getElementById('ir-dt').style.display = this.value==='custom' ? '' : 'none';
       });
 
-      var detailEl=document.getElementById('ir-detail');
-      detailEl.innerHTML='Loading inventory…';
-      loadInventory().then(function(rows){
-        groups = groupByDestination(rows||[]);
-        applyFilters();
-        detailEl.className='muted';
-        detailEl.innerHTML='Expand a destination on the left to view numbers and previews.';
-      });
-    } catch(e){
-      try { root.innerHTML = '<div style="color:#a00">Mount error: '+(e && e.message ? e.message : e)+'</div>'; } catch(_) {}
-      console.error(e);
-    }
-  };
-})();
+detailEl.innerHTML='Loading inventory…';
+loadInventory().then(function(rows){
+  groups = groupByDestination(rows||[]);
+  applyFilters();
+  detailEl.className='muted';
+  detailEl.innerHTML='Expand a destination on the left to view numbers and previews.';
+}).catch(function(err){
+  console.error('[Intelli] inventory error:', err);
+  detailEl.className='';
+  detailEl.innerHTML =
+    '<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
+    + '<div style="font-weight:600; margin-bottom:6px;">Could not load phone number inventory</div>'
+    + '<div style="margin-bottom:6px;">' + (err && err.message ? err.message : err) + '</div>'
+    + '<div style="font-size:12px;">If you know the endpoint, run in console:<br>'
+    + '<code>window.cvIntelliNumbersUrl = "/exact/path/here";</code><br>then click the Intelli Routing tile again.</div>'
+    + '</div>';
+});
+
