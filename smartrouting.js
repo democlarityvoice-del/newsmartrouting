@@ -82,69 +82,6 @@
   }
 })(); // <—— missing close was here
 
-function renderCard(g){  // or renderGroupCard(g)
-  var card = make('div','card');
-  card.appendChild(make('div','left-bar'));
-
-  var hdr = make('div','card-h');
-
-  var left = make('div','hdr-left');
-  left.appendChild(make('div','card-title', g.name));
-  left.appendChild(make('span','dest-badge', g.type));
-  hdr.appendChild(left);
-
-  var right = make('div','hdr-right');
-  right.appendChild(make('span','count-badge', g.count + ' number' + (g.count===1?'':'s')));
-  var btn = make('button','btn', activeDetail===g.key ? 'Collapse' : 'Expand');
-  right.appendChild(btn);
-  hdr.appendChild(right);
-
-  card.appendChild(hdr);
-
-  var body = make('div','card-b');
-  if (activeDetail===g.key) {
-    var preview = make('div','muted','');
-    if (g.type==='User'){ preview.innerHTML='<b>User:</b> top rule <i>Business Hours</i> → AA <b>Main Menu</b>'; }
-    else if (g.type==='Queue'){ preview.innerHTML='<b>Queue:</b> round-robin, timeout 60s → VM <b>Sales VM</b>'; }
-    else if (g.type==='AA'){ preview.innerHTML='<b>AA keys:</b> 1: Sales · 2: Support · timeout: Main VM'; }
-    else { preview.innerHTML='<b>Direct:</b> '+g.type; }
-    body.appendChild(preview);
-
-    var acts = make('div','card-actions');
-    var exportBtn = make('button','btn','Export CSV');
-    exportBtn.onclick = function(){
-      var csv='Number,Label\n', i, n, lbl;
-      for(i=0;i<g.numbers.length;i++){ n=g.numbers[i]; lbl=(n.label||'').replace(/"/g,'""'); csv+='"'+n.number+'","'+lbl+'"\n'; }
-      var blob=new Blob([csv],{type:'text/csv'}), url=URL.createObjectURL(blob), a=document.createElement('a');
-      a.href=url; a.download=(g.type+' '+g.name+' numbers.csv').replace(/\s+/g,'_'); a.click(); setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
-    };
-    acts.appendChild(exportBtn);
-    body.appendChild(acts);
-
-    var rows = make('div','rows'); body.appendChild(rows);
-    (typeof mountVirtualList==='function' ? mountVirtualList : mountVirtual)(rows, g.numbers, 40);
-  } else {
-    body.appendChild(make('div','muted','Click expand to view numbers and previews.'));
-  }
-  card.appendChild(body);
-
-  btn.onclick = function(){
-    activeDetail = (activeDetail===g.key) ? null : g.key;
-    applyFilters();
-    var detail=document.getElementById('ir-detail');
-    if(activeDetail===g.key){
-      detail.innerHTML = '<div class="card"><div class="card-h"><div class="hdr-left"><div class="card-title">'+g.name+
-        '</div><span class="dest-badge">'+g.type+'</span></div></div><div class="card-b">This destination has <b>'+g.count+
-        '</b> numbers.<br/><span class="muted">Use Export CSV for the full list. “When” affects trace later.</span></div></div>';
-    } else if(!activeDetail){
-      detail.innerHTML = 'Expand a destination on the left to view numbers and previews.'; detail.className='muted';
-    }
-  };
-
-  return card;
-}
-
-
 /* ===== Intelli Routing — Overlay (dock; scoped; banner/title swap; active state) ===== */
 ;(function(){
   var DEFAULT_ACCENT = '#f89406';
@@ -154,14 +91,14 @@ function renderCard(g){  // or renderGroupCard(g)
     if (document.getElementById('cv-intelli-style')) return;
     var css = [
       '#cv-intelli-root{display:none; --cv-accent:'+DEFAULT_ACCENT+'; --cv-tint:'+DEFAULT_TINT+';}',
-      /* cover the host completely when docked */
+      /* fully cover the host when docked */
       '#cv-intelli-root.dock{position:absolute; inset:0; z-index:9999}',
+      /* full-screen fallback */
       '#cv-intelli-root.float{position:fixed; inset:0; z-index:999999}',
-      /* backdrop: visible in both modes so nothing bleeds through */
+      /* solid backdrop (prevents buttons showing through) */
       '#cv-intelli-root .cv-back{position:absolute; inset:0; background:#fff; opacity:1}',
       /* panel */
       '#cv-intelli-root .cv-panel{position:absolute; inset:0; background:#fff; box-sizing:border-box; font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}',
-      /* remove rounding/shadow when docked so it looks native */
       '#cv-intelli-root.dock .cv-panel{border-radius:0; box-shadow:none}',
       '#cv-intelli-root.float .cv-panel{margin:4% auto; max-width:960px; height:auto; border-radius:12px; box-shadow:0 8px 40px rgba(0,0,0,.12)}',
       /* header */
@@ -268,8 +205,8 @@ function renderCard(g){  // or renderGroupCard(g)
       for (var j=0;j<nodes.length;j++){
         var el = nodes[j]; if (seen.has(el)) continue;
         var txt = (el.textContent||'').trim();
-        var box = el.getBoundingClientRect();
-        var vis = el.offsetParent !== null && box.width > 100 && box.top < 260;
+        var b = el.getBoundingClientRect();
+        var vis = el.offsetParent !== null && b.width > 100 && b.top < 260;
         if (txt && vis) { _bannerEls.push(el); _origBannerTexts.push(txt); seen.add(el); }
       }
     }
@@ -277,8 +214,8 @@ function renderCard(g){  // or renderGroupCard(g)
       var all = document.querySelectorAll('h1,h2,.title,.titlebar,.tab-title,.module-title');
       for (var k=0;k<all.length;k++){
         var t=(all[k].textContent||'').trim();
-        var b=all[k].getBoundingClientRect();
-        if (t==='Home' && all[k].offsetParent!==null && b.top<260 && b.width>100){
+        var bb=all[k].getBoundingClientRect();
+        if (t==='Home' && all[k].offsetParent!==null && bb.top<260 && bb.width>100){
           _bannerEls.push(all[k]); _origBannerTexts.push(t);
         }
       }
@@ -354,7 +291,7 @@ function renderCard(g){  // or renderGroupCard(g)
   }
 
   window.addEventListener('cv:intelli-routing:open', openOverlay, false);
-  window.cvIntelliOpen = openOverlay; // optional manual trigger
+  window.cvIntelliOpen = openOverlay;
 })();
 
 
@@ -363,7 +300,17 @@ function renderCard(g){  // or renderGroupCard(g)
   window.cvIntelliRoutingMount = function(root){
     try {
       root.innerHTML = '';
-      var wrap = document.createElement('div'); wrap.className = 'ir';
+
+      // ---- tiny helper (local to the mount) ----
+      function make(tag, cls, html){
+        var el=document.createElement(tag);
+        if(cls) el.className=cls;
+        if(html!=null) el.innerHTML=html;
+        return el;
+      }
+
+      // ---- layout scaffold
+      var wrap = make('div','ir');
       wrap.innerHTML =
         '<div class="ir-left">'
       +   '<div class="ir-h1">Destinations</div>'
@@ -391,6 +338,7 @@ function renderCard(g){  // or renderGroupCard(g)
       + '</div>';
       root.appendChild(wrap);
 
+      // ---- demo data (swap to real endpoints later)
       function demoInventory(n){
         var out=[], i, t, id, name, types=["User","Queue","AA","External","VM"];
         for(i=0;i<n;i++){
@@ -407,8 +355,6 @@ function renderCard(g){  // or renderGroupCard(g)
         return out;
       }
       function loadInventory(){ return Promise.resolve(demoInventory(350)); }
-
-      function make(tag, cls, html){ var el=document.createElement(tag); if(cls)el.className=cls; if(html!=null)el.innerHTML=html; return el; }
 
       function groupByDestination(rows){
         var map={}, k, i, r;
@@ -444,6 +390,71 @@ function renderCard(g){  // or renderGroupCard(g)
         container.addEventListener('scroll', draw); draw(); return { redraw: draw };
       }
 
+      // ---- render (LOCAL renderCard so it sees activeDetail/applyFilters/make) ----
+      var groups=[], viewGroups=[], activeDetail=null;
+
+      function renderCard(g){
+        var card = make('div','card');
+        card.appendChild(make('div','left-bar'));
+
+        var hdr = make('div','card-h');
+
+        var left = make('div','hdr-left');
+        left.appendChild(make('div','card-title', g.name));
+        left.appendChild(make('span','dest-badge', g.type));
+        hdr.appendChild(left);
+
+        var right = make('div','hdr-right');
+        right.appendChild(make('span','count-badge', g.count + ' number' + (g.count===1?'':'s')));
+        var btn = make('button','btn', activeDetail===g.key ? 'Collapse' : 'Expand');
+        right.appendChild(btn);
+        hdr.appendChild(right);
+
+        card.appendChild(hdr);
+
+        var body = make('div','card-b');
+        if (activeDetail===g.key) {
+          var preview = make('div','muted','');
+          if (g.type==='User'){ preview.innerHTML='<b>User:</b> top rule <i>Business Hours</i> → AA <b>Main Menu</b>'; }
+          else if (g.type==='Queue'){ preview.innerHTML='<b>Queue:</b> round-robin, timeout 60s → VM <b>Sales VM</b>'; }
+          else if (g.type==='AA'){ preview.innerHTML='<b>AA keys:</b> 1: Sales · 2: Support · timeout: Main VM'; }
+          else { preview.innerHTML='<b>Direct:</b> '+g.type; }
+          body.appendChild(preview);
+
+          var acts = make('div','card-actions');
+          var exportBtn = make('button','btn','Export CSV');
+          exportBtn.onclick = function(){
+            var csv='Number,Label\n', i, n, lbl;
+            for(i=0;i<g.numbers.length;i++){ n=g.numbers[i]; lbl=(n.label||'').replace(/"/g,'""'); csv+='"'+n.number+'","'+lbl+'"\n'; }
+            var blob=new Blob([csv],{type:'text/csv'}), url=URL.createObjectURL(blob), a=document.createElement('a');
+            a.href=url; a.download=(g.type+' '+g.name+' numbers.csv').replace(/\s+/g,'_'); a.click(); setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+          };
+          acts.appendChild(exportBtn);
+          body.appendChild(acts);
+
+          var rows = make('div','rows'); body.appendChild(rows);
+          mountVirtualList(rows, g.numbers, 40);
+        } else {
+          body.appendChild(make('div','muted','Click expand to view numbers and previews.'));
+        }
+        card.appendChild(body);
+
+        btn.onclick = function(){
+          activeDetail = (activeDetail===g.key) ? null : g.key;
+          applyFilters();
+          var detail=document.getElementById('ir-detail');
+          if(activeDetail===g.key){
+            detail.innerHTML = '<div class="card"><div class="card-h"><div class="hdr-left"><div class="card-title">'+g.name+
+              '</div><span class="dest-badge">'+g.type+'</span></div></div><div class="card-b">This destination has <b>'+g.count+
+              '</b> numbers.<br/><span class="muted">Use Export CSV for the full list. “When” affects trace later.</span></div></div>';
+          } else if(!activeDetail){
+            detail.innerHTML = 'Expand a destination on the left to view numbers and previews.'; detail.className='muted';
+          }
+        };
+
+        return card;
+      }
+
       function renderGroups(){
         var host=document.getElementById('ir-groups'); host.innerHTML='';
         for(var i=0;i<viewGroups.length;i++){ host.appendChild(renderCard(viewGroups[i])); }
@@ -466,8 +477,7 @@ function renderCard(g){  // or renderGroupCard(g)
         renderGroups();
       }
 
-      var groups=[], viewGroups=[], activeDetail=null;
-
+      // hooks
       document.getElementById('ir-q').addEventListener('input', function(){ activeDetail=null; applyFilters(); });
       var chips = root.querySelectorAll('.chip');
       for(var i=0;i<chips.length;i++){
