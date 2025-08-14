@@ -91,17 +91,11 @@
     if (document.getElementById('cv-intelli-style')) return;
     var css = [
       '#cv-intelli-root{display:none; --cv-accent:'+DEFAULT_ACCENT+'; --cv-tint:'+DEFAULT_TINT+';}',
-      /* fully cover the host when docked */
       '#cv-intelli-root.dock{position:absolute; inset:0; z-index:9999}',
-      /* full-screen fallback */
       '#cv-intelli-root.float{position:fixed; inset:0; z-index:999999}',
-      /* solid backdrop (prevents buttons showing through) */
-      '#cv-intelli-root .cv-back{position:absolute; inset:0; background:#fff; opacity:1}',
-      /* panel */
+      '#cv-intelli-root .cv-back{position:absolute; inset:0; background:#fff; opacity:1}', /* solid backdrop */
       '#cv-intelli-root .cv-panel{position:absolute; inset:0; background:#fff; box-sizing:border-box; font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}',
-      '#cv-intelli-root.dock .cv-panel{border-radius:0; box-shadow:none}',
       '#cv-intelli-root.float .cv-panel{margin:4% auto; max-width:960px; height:auto; border-radius:12px; box-shadow:0 8px 40px rgba(0,0,0,.12)}',
-      /* header */
       '#cv-intelli-root .cv-h{display:flex; align-items:center; justify-content:space-between; padding:12px 16px; background:linear-gradient(180deg, var(--cv-tint), #fff); border-bottom:1px solid rgba(229,112,39,.22); font-weight:600}',
       '#cv-intelli-root .cv-x{cursor:pointer; background:transparent; border:none; font-size:20px; line-height:1}',
       '#cv-intelli-root .cv-b{padding:16px; height:calc(100% - 52px); overflow:auto}',
@@ -138,7 +132,17 @@
       '#cv-intelli-root .sel:focus{outline:none; box-shadow:0 0 0 3px rgba(229,112,39,.35); border-color:var(--cv-accent)}',
       '#cv-intelli-root .btn{cursor:pointer; border:none; background:var(--cv-accent); color:#fff; padding:8px 12px; border-radius:10px; line-height:1; font-weight:600}',
       '#cv-intelli-root .btn:hover{filter:brightness(.95)}',
-      '#cv-intelli-root .pill{font-size:12px; padding:2px 8px; border:1px solid #ddd; border-radius:999px; background:#fafafa}'
+      '#cv-intelli-root .pill{font-size:12px; padding:2px 8px; border:1px solid #ddd; border-radius:999px; background:#fafafa}',
+
+      /* ===== AA dial pad (right side) ===== */
+      '#cv-intelli-root .dial{border:1px solid #eee; border-radius:12px; background:#fff; overflow:hidden}',
+      '#cv-intelli-root .dial-h{padding:10px 12px; background:#fafafa; border-bottom:1px solid #eee; font-weight:600}',
+      '#cv-intelli-root .dial-keys{display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:12px}',
+      '#cv-intelli-root .dial-key{width:42px; height:42px; border-radius:50%; border:1px solid #ddd; display:flex; align-items:center; justify-content:center; cursor:pointer; user-select:none}',
+      '#cv-intelli-root .dial-key:hover{border-color:var(--cv-accent); box-shadow:0 0 0 3px rgba(229,112,39,.18)}',
+      '#cv-intelli-root .dial-next{padding:12px; border-top:1px dashed #e5e5e5}',
+      '#cv-intelli-root .route-row{display:flex; align-items:center; gap:8px; padding:6px 0}',
+      '#cv-intelli-root .route-badge{font-size:12px; padding:2px 6px; border:1px solid var(--cv-accent); border-radius:6px; background:var(--cv-tint)}'
     ].join('\n');
     var st=document.createElement('style'); st.id='cv-intelli-style'; st.type='text/css';
     st.appendChild(document.createTextNode(css)); document.head.appendChild(st);
@@ -174,6 +178,7 @@
       + '  <div class="cv-h"><div>Intelli Routing</div><button class="cv-x" title="Close">×</button></div>'
       + '  <div class="cv-b"><div id="cv-intelli-mount">Loading…</div></div>'
       + '</div>';
+
       (host || document.body).appendChild(root);
       function close(){ root.style.display='none'; swapBanner(false); swapNavTitle(false); setNavActiveIntelli(false); }
       root.querySelector('.cv-back').addEventListener('click', close);
@@ -234,12 +239,8 @@
     var el = _navTitleEl || document.querySelector('.navigation-title');
     if (!el) return;
     _navTitleEl = el;
-    if (on) {
-      if (_origNavTitle == null) _origNavTitle = (el.textContent || '').trim();
-      el.textContent = 'Intelli Routing';
-    } else if (_origNavTitle != null) {
-      el.textContent = _origNavTitle; _origNavTitle = null;
-    }
+    if (on) { if (_origNavTitle == null) _origNavTitle = (el.textContent || '').trim(); el.textContent = 'Intelli Routing'; }
+    else if (_origNavTitle != null) { el.textContent = _origNavTitle; _origNavTitle = null; }
   }
   function setNavActiveIntelli(on){
     try {
@@ -301,13 +302,8 @@
     try {
       root.innerHTML = '';
 
-      // ---- tiny helper (local to the mount) ----
-      function make(tag, cls, html){
-        var el=document.createElement(tag);
-        if(cls) el.className=cls;
-        if(html!=null) el.innerHTML=html;
-        return el;
-      }
+      // ---- helper (scoped) ----
+      function make(tag, cls, html){ var el=document.createElement(tag); if(cls) el.className=cls; if(html!=null) el.innerHTML=html; return el; }
 
       // ---- layout scaffold
       var wrap = make('div','ir');
@@ -338,7 +334,7 @@
       + '</div>';
       root.appendChild(wrap);
 
-      // ---- demo data (swap to real endpoints later)
+      // ---- demo data
       function demoInventory(n){
         var out=[], i, t, id, name, types=["User","Queue","AA","External","VM"];
         for(i=0;i<n;i++){
@@ -390,7 +386,61 @@
         container.addEventListener('scroll', draw); draw(); return { redraw: draw };
       }
 
-      // ---- render (LOCAL renderCard so it sees activeDetail/applyFilters/make) ----
+      // ---- AA side-open detail ----
+      function getAAConfig(destId){
+        // placeholder. swap with real AA map when you wire the endpoint
+        return {
+          '1': { type:'Queue', name:'Sales' },
+          '2': { type:'Queue', name:'Support' },
+          '3': { type:'AA',    name:'Spanish Menu' },
+          '0': { type:'User',  name:'Operator (User 300)' },
+          '*': { type:'VM',    name:'Main Voicemail' },
+          '#': { type:'Repeat',name:'Repeat Menu' },
+          't': { type:'Timeout', name:'Main VM (60s)' }
+        };
+      }
+      function renderAADetail(group, host){
+        host.className=''; host.innerHTML='';
+        var box = make('div','dial');
+        var head = make('div','dial-h','Dial Pad Menu');
+        var keys = make('div','dial-keys');
+        var next = make('div','dial-next','<div class="muted">Click a key to preview its routing.</div>');
+        box.appendChild(head); box.appendChild(keys); box.appendChild(next); host.appendChild(box);
+
+        var order = ['1','2','3','4','5','6','7','8','9','0','*','#'];
+        var cfg = getAAConfig(group.id);
+
+        order.forEach(function(k){
+          var btn = make('div','dial-key', k);
+          btn.title = 'Key '+k;
+          btn.addEventListener('click', function(){
+            var route = cfg[k];
+            if (!route){
+              next.innerHTML = '<div class="muted">Key '+k+' is not assigned.</div>';
+              return;
+            }
+            // simple preview + expandable "trace" row
+            var rows = [];
+            rows.push('<div class="route-row"><span class="route-badge">'+route.type+'</span> '+route.name+'</div>');
+            if (route.type==='Queue') rows.push('<div class="route-row muted">Strategy: round-robin · Ring 60s → VM Sales</div>');
+            if (route.type==='User')  rows.push('<div class="route-row muted">Rings user, then → User VM</div>');
+            if (route.type==='AA')    rows.push('<div class="route-row muted">Press 1 for Sales · 2 for Support · 0 Operator</div>');
+            if (k==='t')              rows.push('<div class="route-row muted">Timeout: 5s of silence → Main VM</div>');
+            next.innerHTML = '<div style="font-weight:600;margin-bottom:6px">Key '+k+'</div>'+rows.join('');
+          });
+          keys.appendChild(btn);
+        });
+      }
+
+      function renderNonAADetail(group, host){
+        host.className=''; host.innerHTML =
+          '<div class="card">'
+        + '  <div class="card-h"><div class="hdr-left"><div class="card-title">'+group.name+'</div><span class="dest-badge">'+group.type+'</span></div></div>'
+        + '  <div class="card-b">This destination has <b>'+group.count+'</b> numbers.<br/><span class="muted">Use Export CSV in the left card for the full list. “When” affects trace later.</span></div>'
+        + '</div>';
+      }
+
+      // ---- renderers ----
       var groups=[], viewGroups=[], activeDetail=null;
 
       function renderCard(g){
@@ -398,7 +448,6 @@
         card.appendChild(make('div','left-bar'));
 
         var hdr = make('div','card-h');
-
         var left = make('div','hdr-left');
         left.appendChild(make('div','card-title', g.name));
         left.appendChild(make('span','dest-badge', g.type));
@@ -444,11 +493,10 @@
           applyFilters();
           var detail=document.getElementById('ir-detail');
           if(activeDetail===g.key){
-            detail.innerHTML = '<div class="card"><div class="card-h"><div class="hdr-left"><div class="card-title">'+g.name+
-              '</div><span class="dest-badge">'+g.type+'</span></div></div><div class="card-b">This destination has <b>'+g.count+
-              '</b> numbers.<br/><span class="muted">Use Export CSV for the full list. “When” affects trace later.</span></div></div>';
+            if (g.type==='AA') renderAADetail(g, detail); else renderNonAADetail(g, detail);
           } else if(!activeDetail){
-            detail.innerHTML = 'Expand a destination on the left to view numbers and previews.'; detail.className='muted';
+            detail.className='muted';
+            detail.innerHTML = 'Expand a destination on the left to view numbers and previews.';
           }
         };
 
@@ -459,6 +507,15 @@
         var host=document.getElementById('ir-groups'); host.innerHTML='';
         for(var i=0;i<viewGroups.length;i++){ host.appendChild(renderCard(viewGroups[i])); }
         document.getElementById('ir-count').textContent = viewGroups.length + ' destination group' + (viewGroups.length===1?'':'s');
+        // render details for currently active (if still visible)
+        var found = viewGroups.find(function(g){ return g.key===activeDetail; });
+        var detail=document.getElementById('ir-detail');
+        if (found){
+          if (found.type==='AA') renderAADetail(found, detail); else renderNonAADetail(found, detail);
+        } else if (!activeDetail){
+          detail.className='muted';
+          detail.innerHTML='Expand a destination on the left to view numbers and previews.';
+        }
       }
 
       function applyFilters(){
@@ -477,7 +534,9 @@
         renderGroups();
       }
 
-      // hooks
+      // state + boot
+      var groups=[], viewGroups=[], activeDetail=null;
+
       document.getElementById('ir-q').addEventListener('input', function(){ activeDetail=null; applyFilters(); });
       var chips = root.querySelectorAll('.chip');
       for(var i=0;i<chips.length;i++){
@@ -495,6 +554,7 @@
       loadInventory().then(function(rows){
         groups = groupByDestination(rows||[]);
         applyFilters();
+        detailEl.className='muted';
         detailEl.innerHTML='Expand a destination on the left to view numbers and previews.';
       });
     } catch(e){
