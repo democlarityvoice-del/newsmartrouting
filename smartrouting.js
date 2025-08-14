@@ -333,6 +333,65 @@
       +   '<div id="ir-detail" class="muted">Expand a destination on the left to view numbers and previews.</div>'
       + '</div>';
       root.appendChild(wrap);
+// --- utils for normalizing the numbers payload ---
+function formatTN(s){
+  s = (s||'').replace(/[^\d]/g,'');
+  if (s.length===11 && s[0]==='1') s = s.slice(1);
+  if (s.length===10) return '('+s.slice(0,3)+') '+s.slice(3,6)+'-'+s.slice(6);
+  return s || '';
+}
+function _norm(v){ return (v||'').toString().toLowerCase(); }
+function mapDestType(t){
+  t = _norm(t);
+  if (/^(user|person|extension)$/.test(t)) return 'User';
+  if (/^(queue|callqueue|acd)$/.test(t))   return 'Queue';
+  if (/^(aa|auto.?attendant|ivr)$/.test(t)) return 'AA';
+  if (/^(vm|voicemail)$/.test(t))          return 'VM';
+  if (/^(external|pstn|sip|route|number)$/.test(t)) return 'External';
+  return (t && t[0].toUpperCase()+t.slice(1)) || 'External';
+}
+function mapDestName(x, t){
+  t = mapDestType(t);
+  if (t==='User')  return x.user_name || x.owner_name || x.name || ('User '  +(x.owner_id||x.user_id||''));
+  if (t==='Queue') return x.queue_name|| x.owner_name || x.name || ('Queue ' +(x.owner_id||x.queue_id||''));
+  if (t==='AA')    return x.aa_name   || x.owner_name || x.name || ('Auto Attendant ' +(x.owner_id||x.aa_id||''));
+  if (t==='VM')    return x.vm_name   || x.owner_name || x.name || ('Voicemail ' +(x.owner_id||x.vm_id||''));
+  return x.route_name || x.trunk_name || x.dest || x.name || 'External';
+}
+
+// === REAL inventory loader (replaces the demo) ===
+function loadInventory(){
+  var url = '/portal/api/numbers?limit=5000'; // ← relative so it works on any domain
+  return fetch(url, { credentials: 'include' })
+    .then(function(r){
+      if (r.redirected) console.warn('[Intelli] numbers fetch redirected to', r.url);
+      if (!r.ok) throw new Error('numbers '+r.status);
+      return r.json();
+    })
+    .then(function(data){
+      // The list might be under data.items / data.data / data.results / or be an array already
+      var list = Array.isArray(data) ? data : (data.items || data.data || data.results || data.numbers || []);
+      if (!Array.isArray(list)) { console.warn('[Intelli] unexpected numbers payload', data); list = []; }
+      return list.map(function(x, i){
+        var destType = x.dest_type || x.owner_type || x.type || x.destination_type;
+        var destId   = x.dest_id   || x.owner_id   || x.destination_id;
+        var destName = x.dest_name || x.owner_name || x.destination_name;
+
+        return {
+          id:       x.id || x.uuid || ('num'+i),
+          number:   formatTN(x.number || x.tn || x.did || x.dnis || ''),
+          label:    x.label || x.alias || x.description || '',
+          destType: mapDestType(destType),
+          destId:   String(destId || ''),
+          destName: destName || mapDestName(x, destType)
+        };
+      });
+    })
+    .catch(function(err){
+      console.error('[Intelli] loadInventory failed:', err);
+      return []; // fail safe
+    });
+}
 
       // ---- demo data
       function demoInventory(n){
