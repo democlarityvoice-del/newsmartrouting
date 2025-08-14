@@ -229,3 +229,76 @@
     }
   })();
 })();
+/* ===== Intelli Routing — Mount (iframe-safe, no globals) ===== */
+;(function () {
+  if (typeof window.cvIntelliRoutingMount === 'function') return; // guard
+
+  window.cvIntelliRoutingMount = function (root) {
+    try {
+      if (!root) { console.error('[Intelli] mount: missing root'); return; }
+      var doc = root.ownerDocument;
+
+      // ——— minimal scoped styles inside the iframe document
+      var st = doc.getElementById('cv-intelli-iframe-style');
+      if (!st) {
+        st = doc.createElement('style');
+        st.id = 'cv-intelli-iframe-style';
+        st.textContent = [
+          '.ir-wrap{font:14px/1.45 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:#222}',
+          '.ir-top{padding:10px 12px;border-bottom:1px solid #e5e7eb;background:#fafafa;font-weight:600}',
+          '.ir-body{display:flex;gap:16px;padding:12px}',
+          '.ir-left{flex:0 0 340px}',
+          '.ir-right{flex:1;min-width:0}',
+          '.ir-h1{font-weight:600;margin:0 0 8px}',
+          '.ir-card{border:1px solid #eee;border-radius:10px;background:#fff;box-shadow:0 8px 24px rgba(0,0,0,.06);margin-bottom:12px}',
+          '.ir-card-h{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid #eee;background:#fafafa;border-top-left-radius:10px;border-top-right-radius:10px}',
+          '.ir-card-b{padding:10px 12px}',
+          '.ir-chip{display:inline-block;font-size:12px;padding:4px 8px;margin:0 6px 6px 0;border:1px solid #e5e5e5;border-radius:999px;background:#fafafa;cursor:pointer}',
+          '.ir-chip.active{background:#FDE8CC;border-color:#f89406;color:#4a2a00}',
+          '.ir-search{width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:10px}',
+          '.ir-btn{cursor:pointer;border:none;background:#f89406;color:#fff;padding:8px 12px;border-radius:10px;line-height:1;font-weight:600}'
+        ].join('\n');
+        doc.head.appendChild(st);
+      }
+
+      // ——— layout
+      root.innerHTML = '';
+      var wrap = doc.createElement('div');
+      wrap.className = 'ir-wrap';
+      wrap.innerHTML =
+        '<div class="ir-top">Intelli Routing</div>' +
+        '<div class="ir-body">' +
+        '  <div class="ir-left">' +
+        '    <div class="ir-h1">Destinations</div>' +
+        '    <input class="ir-search" placeholder="Search destination or number…">' +
+        '    <div style="margin:8px 0 10px">' +
+        '      <span class="ir-chip active">All</span>' +
+        '      <span class="ir-chip">User</span>' +
+        '      <span class="ir-chip">Queue</span>' +
+        '      <span class="ir-chip">Auto Attendant</span>' +
+        '      <span class="ir-chip">External</span>' +
+        '      <span class="ir-chip">Voicemail</span>' +
+        '    </div>' +
+        '    <div class="ir-card"><div class="ir-card-h">Marketing Router <button class="ir-btn" id="ir-demo-expand">Expand</button></div><div class="ir-card-b">Click expand to preview demo numbers…</div></div>' +
+        '  </div>' +
+        '  <div class="ir-right">' +
+        '    <div class="ir-h1">Details</div>' +
+        '    <div class="ir-card"><div class="ir-card-b" id="ir-detail">Expand a destination on the left to view numbers and previews.</div></div>' +
+        '  </div>' +
+        '</div>';
+      root.appendChild(wrap);
+
+      // ——— tiny demo interaction so you can verify it’s alive
+      var btn = doc.getElementById('ir-demo-expand');
+      if (btn) {
+        btn.addEventListener('click', function () {
+          var detail = doc.getElementById('ir-detail');
+          detail.innerHTML = 'This is a demo preview with 100 numbers. (Wiring confirmed ✔)';
+        });
+      }
+    } catch (e) {
+      try { root.textContent = 'Mount error: ' + (e && e.message ? e.message : e); } catch (_) {}
+      console.error('[Intelli] mount failed:', e);
+    }
+  };
+})();
