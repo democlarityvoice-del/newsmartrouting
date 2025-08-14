@@ -406,6 +406,8 @@ window.cvIntelliForceBanner = function(sel){
     console.warn('[Intelli] cvIntelliRoutingMount not a function yet');
   }
 }
+window.addEventListener('cv:intelli-routing:open', openOverlay, false);
+window.cvIntelliOpen = openOverlay; // optional manual trigger
 
 
 
