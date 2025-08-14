@@ -488,111 +488,110 @@
       + '</div>';
       root.appendChild(wrap);
 
-      // ===== REAL numbers inventory: auto-detect endpoint (override with window.cvIntelliNumbersUrl) =====
-      var NUMBERS_URL = window.cvIntelliNumbersUrl || null;
+// ===== REAL numbers inventory: auto-detect endpoint (override with window.cvIntelliNumbersUrl) =====
+var NUMBERS_URL = window.cvIntelliNumbersUrl || null;
 
-      async function fetchJSON(url){
-        const r = await fetch(url, { credentials: 'same-origin' });
-        if (!r.ok) throw new Error('HTTP '+r.status+' on '+url);
-        const ct = (r.headers.get('content-type')||'').toLowerCase();
-        if (!ct.includes('json')) {
-          // try parse text as json (some portals return text/html)
-          const txt = await r.text();
-          return JSON.parse(txt);
-        }
-        return r.json();
-      }
+function addParam(url, key, val){
+  try {
+    var u = new URL(url, location.origin);
+    if (!u.searchParams.has(key)) u.searchParams.set(key, val);
+    return u.pathname + u.search;
+  } catch (_) { // relative only
+    if (url.indexOf('?') === -1) return url + '?' + encodeURIComponent(key) + '=' + encodeURIComponent(val);
+    return url + '&' + encodeURIComponent(key) + '=' + encodeURIComponent(val);
+  }
+}
 
-      async function probeNumbersUrl(){
-        if (NUMBERS_URL) return NUMBERS_URL;
-        const candidates = [
-          '/portal/inventory/numbers?format=json',
-          '/portal/inventory/dids?format=json',
-          '/portal/inventory/tns?format=json',
-          '/portal/ajax/numbers',
-          '/portal/ajax/dids',
-          '/portal/api/v1/numbers',
-          '/portal/api/numbers',
-          '/api/numbers',
-          '/ns-api/numbers',
-          '/portal/number/list?json=1'
-        ];
-        for (var i=0;i<candidates.length;i++){
-          var base=candidates[i];
-          try {
-            var test = base + (base.includes('?')?'&':'?') + 'limit=25';
-            var data = await fetchJSON(test);
-            var list = Array.isArray(data) ? data : (data.items || data.results || data.data || data.numbers);
-            if (Array.isArray(list)) { console.log('[Intelli] numbers endpoint:', base); NUMBERS_URL = base; return NUMBERS_URL; }
-          } catch(e){ /* try next */ }
-        }
-        throw new Error('No numbers endpoint responded with JSON');
-      }
+async function fetchJSON(url){
+  const r = await fetch(url, {
+    credentials: 'include',
+    headers: {
+      'Accept': 'application/json, text/javascript, */*; q=0.01',
+      'X-Requested-With': 'XMLHttpRequest'
+    }
+  });
+  const ct = (r.headers.get('content-type') || '').toLowerCase();
+  if (!r.ok) throw new Error('HTTP ' + r.status + ' on ' + url);
+  if (ct.includes('application/json') || ct.includes('text/json')) return r.json();
 
-      function formatTN(s){
-        s = (s||'').replace(/[^\d]/g,'');
-        if (s.length===11 && s[0]==='1') s = s.slice(1);
-        if (s.length===10) return '('+s.slice(0,3)+') '+s.slice(3,6)+'-'+s.slice(6);
-        return s || '';
-      }
-      function _norm(v){ return (v||'').toString().toLowerCase(); }
-      function mapDestType(t){
-        t = _norm(t);
-        if (/^(user|person|extension)$/.test(t)) return 'User';
-        if (/^(queue|callqueue|acd)$/.test(t))   return 'Queue';
-        if (/^(aa|auto.?attendant|ivr)$/.test(t)) return 'AA';
-        if (/^(vm|voicemail)$/.test(t))          return 'VM';
-        if (/^(external|pstn|sip|route|number)$/.test(t)) return 'External';
-        return (t && t[0].toUpperCase()+t.slice(1)) || 'External';
-      }
-      function mapDestName(x, t){
-        t = mapDestType(t);
-        if (t==='User')  return x.user_name || x.owner_name || x.name || ('User '  +(x.owner_id||x.user_id||''));
-        if (t==='Queue') return x.queue_name|| x.owner_name || x.name || ('Queue ' +(x.owner_id||x.queue_id||''));
-        if (t==='AA')    return x.aa_name   || x.owner_name || x.name || ('Auto Attendant ' +(x.owner_id||x.aa_id||''));
-        if (t==='VM')    return x.vm_name   || x.owner_name || x.name || ('Voicemail ' +(x.owner_id||x.vm_id||''));
-        return x.route_name || x.trunk_name || x.dest || x.name || 'External';
-      }
+  // If we got HTML (login/redirect), bail with helpful message.
+  const txt = await r.text();
+  throw new Error('Non-JSON response from ' + url + (r.redirected ? ' (redirected to ' + r.url + ')' : '') + ' — first 80 chars: ' + txt.slice(0,80));
+}
 
-      function demoInventory(n){
-        var out=[], i, t, id, name, types=["User","Queue","AA","External","VM"];
-        for(i=0;i<n;i++){
-          t=types[i%types.length];
-          if(t==="User"){ id="u-"+(200+(i%8)); name="User "+(200+(i%8)); }
-          if(t==="Queue"){ id="q-"+(100+(i%4)); name="Queue "+(100+(i%4)); }
-          if(t==="AA"){ id="aa-"+(i%3); name="Main Menu "+(i%3); }
-          if(t==="External"){ id="x-"+(i%6); name="+1 (555) 42"+(10+(i%6)); }
-          if(t==="VM"){ id="vm-"+(i%5); name="Voicemail "+(i%5); }
-          out.push({ id:"num"+i, number:"(555) "+String(2000000+i).slice(0,3)+"-"+String(10000+i).slice(-4),
-                     label:(i%10===0)?"Marketing Line "+(i%10):"", destType:t, destId:id, destName:name });
-        }
-        for(i=0;i<100;i++){ out[i].destType="User"; out[i].destId="u-999"; out[i].destName="Marketing Router"; }
-        return out;
-      }
+async function probeNumbersUrl(){
+  if (NUMBERS_URL) return NUMBERS_URL;
+  const candidates = [
+    '/portal/api/numbers',
+    '/portal/api/v1/numbers',
+    '/portal/ajax/numbers',
+    '/portal/ajax/dids',
+    '/portal/inventory/numbers',
+    '/portal/inventory/dids',
+    '/portal/inventory/tns',
+    '/api/numbers',
+    '/ns-api/numbers',
+    '/portal/number/list'
+  ];
+  for (var i=0;i<candidates.length;i++){
+    var test = addParam(candidates[i], 'limit', '25');
+    try {
+      var data = await fetchJSON(test);
+      var list = Array.isArray(data) ? data : (data.items || data.results || data.data || data.numbers);
+      if (Array.isArray(list)) { console.log('[Intelli] numbers endpoint:', candidates[i]); NUMBERS_URL = candidates[i]; return NUMBERS_URL; }
+    } catch(e){ /* try next */ }
+  }
+  throw new Error('No numbers endpoint responded with JSON. Set window.cvIntelliNumbersUrl manually.');
+}
 
-      async function loadInventory(){
-        try {
-          var base = await probeNumbersUrl();
-          var raw  = await fetchJSON(base + (base.includes('?')?'&':'?') + 'limit=5000');
-          var list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
-          return (list||[]).map(function(x, i){
-            var destType = x.dest_type || x.owner_type || x.type || x.destination_type;
-            var destId   = x.dest_id   || x.owner_id   || x.destination_id;
-            var destName = x.dest_name || x.owner_name || x.destination_name;
-            return {
-              id:       x.id || x.uuid || ('num'+i),
-              number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || ''),
-              label:    x.label || x.alias || x.description || x.name || '',
-              destType: mapDestType(destType),
-              destId:   String(destId || ''),
-              destName: destName || mapDestName(x, destType)
-            };
-          });
-        } catch(e){
-          console.warn('[Intelli] loadInventory falling back to demo:', e && e.message ? e.message : e);
-          return demoInventory(200);
-        }
-      }
+function formatTN(s){
+  s = (s||'').replace(/[^\d]/g,'');
+  if (s.length===11 && s[0]==='1') s = s.slice(1);
+  if (s.length===10) return '('+s.slice(0,3)+') '+s.slice(3,6)+'-'+s.slice(6);
+  return s || '';
+}
+function _norm(v){ return (v||'').toString().toLowerCase(); }
+function mapDestType(t){
+  t = _norm(t);
+  if (/^(user|person|extension)$/.test(t)) return 'User';
+  if (/^(queue|callqueue|acd)$/.test(t))   return 'Queue';
+  if (/^(aa|auto.?attendant|ivr)$/.test(t)) return 'AA';
+  if (/^(vm|voicemail)$/.test(t))          return 'VM';
+  if (/^(external|pstn|sip|route|number)$/.test(t)) return 'External';
+  return (t && t[0].toUpperCase()+t.slice(1)) || 'External';
+}
+function mapDestName(x, t){
+  t = mapDestType(t);
+  if (t==='User')  return x.user_name || x.owner_name || x.name || ('User '  +(x.owner_id||x.user_id||''));
+  if (t==='Queue') return x.queue_name|| x.owner_name || x.name || ('Queue ' +(x.owner_id||x.queue_id||''));
+  if (t==='AA')    return x.aa_name   || x.owner_name || x.name || ('Auto Attendant ' +(x.owner_id||x.aa_id||''));
+  if (t==='VM')    return x.vm_name   || x.owner_name || x.name || ('Voicemail ' +(x.owner_id||x.vm_id||''));
+  return x.route_name || x.trunk_name || x.dest || x.name || 'External';
+}
+
+async function loadInventory(){
+  var base = await probeNumbersUrl();                 // may throw if none work
+  var raw  = await fetchJSON(addParam(base,'limit','5000'));
+  var list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
+  if (!Array.isArray(list) || !list.length) {
+    throw new Error('Endpoint returned no items: ' + base);
+  }
+  return list.map(function(x, i){
+    var destType = x.dest_type || x.owner_type || x.type || x.destination_type;
+    var destId   = x.dest_id   || x.owner_id   || x.destination_id;
+    var destName = x.dest_name || x.owner_name || x.destination_name;
+    return {
+      id:       x.id || x.uuid || ('num'+i),
+      number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
+      label:    x.label || x.alias || x.description || x.name || '',
+      destType: mapDestType(destType),
+      destId:   String(destId || ''),
+      destName: destName || mapDestName(x, destType)
+    };
+  });
+}
+// ===== /REAL numbers inventory =====
+
       // ===== /REAL numbers inventory =====
 
       // ---- AA side-open detail (stub) ----
