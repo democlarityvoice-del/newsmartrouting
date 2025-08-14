@@ -146,14 +146,12 @@ function renderCard(g){  // or renderGroupCard(g)
 }
 
 
-  /* ===== Intelli Routing — Overlay (dock; scoped; banner swap; accent hook) ===== */
+/* ===== Intelli Routing — Overlay (dock; scoped; banner swap; accent hook) ===== */
 ;(function(){
   // ---- Accent (defaults) ----
   // Base Clarity orange + a LIGHTER tint for headers.
   var DEFAULT_ACCENT = '#f89406';
   var DEFAULT_TINT   = '#FDE8CC';  // or your favorite from above
-
-
 
   // ---- Scoped styles (affects only our overlay) ----
   function ensureStyle(){
@@ -224,191 +222,187 @@ function renderCard(g){  // or renderGroupCard(g)
     for(var i=0;i<sels.length;i++){ var el=document.querySelector(sels[i]); if(el && el.offsetParent!==null && el.offsetHeight>200) return el; }
     return null;
   }
-// create/position the overlay root (docked when possible)
-function ensureRoot(){
-  ensureStyle();
-  var host = findDockHost();
-  var mode = host ? 'dock' : 'float';
 
-  var root = document.getElementById('cv-intelli-root');
-  if (!root){
-    root = document.createElement('div');
-    root.id = 'cv-intelli-root';
-    root.innerHTML =
-      '<div class="cv-back"></div>'
-    + '<div class="cv-panel" role="dialog" aria-modal="true" aria-label="Intelli Routing">'
-    + '  <div class="cv-h"><div>Intelli Routing</div><button class="cv-x" title="Close">×</button></div>'
-    + '  <div class="cv-b"><div id="cv-intelli-mount">Loading…</div></div>'
-    + '</div>';
+  // create/position the overlay root (docked when possible)
+  function ensureRoot(){
+    ensureStyle();
+    var host = findDockHost();
+    var mode = host ? 'dock' : 'float';
 
-    (host || document.body).appendChild(root);
+    var root = document.getElementById('cv-intelli-root');
+    if (!root){
+      root = document.createElement('div');
+      root.id = 'cv-intelli-root';
+      root.innerHTML =
+        '<div class="cv-back"></div>'
+      + '<div class="cv-panel" role="dialog" aria-modal="true" aria-label="Intelli Routing">'
+      + '  <div class="cv-h"><div>Intelli Routing</div><button class="cv-x" title="Close">×</button></div>'
+      + '  <div class="cv-b"><div id="cv-intelli-mount">Loading…</div></div>'
+      + '</div>';
 
-    function close(){ root.style.display='none'; swapBanner(false); }
-    root.querySelector('.cv-back').addEventListener('click', close);
-    root.querySelector('.cv-x').addEventListener('click', close);
-  } else {
-    var parent = host || document.body;
-    if (root.parentNode !== parent) parent.appendChild(root);
-  }
+      (host || document.body).appendChild(root);
 
-  root.className = mode;
-  if (host && getComputedStyle(host).position === 'static'){ host.style.position = 'relative'; }
-  return root;
-}
-
-
-// ------- Banner swap helpers (robust) -------
-var _bannerEls = [], _origBannerTexts = [];
-
-function collectBannerEls(){
-  _bannerEls = []; _origBannerTexts = [];
-  var sels = [
-    // common title spots
-    '#page-title h1','#pageTitle','.page-title h1','.pageTitle',
-    '.content-title h1','.section-title h1','.titlebar h1',
-    '.breadcrumbs + h1','.breadcrumb .active',
-    '.module-title h1','.module-title','.tab-title','.tabs .current',
-    // netsapiens/portal variants seen in the wild
-    '.ns-content-header .title','.ns-header .title','.scroll-header .title',
-    '.sticky-title','.top-bar h1','#breadcrumb h1',
-    '.page_header h1','.headerbar h1',
-    // fallbacks
-    '.home h1','#home h1','#content h1','#content h2'
-  ];
-  var seen = new Set();
-  for (var i=0;i<sels.length;i++){
-    var nodes = document.querySelectorAll(sels[i]);
-    for (var j=0;j<nodes.length;j++){
-      var el = nodes[j]; if (seen.has(el)) continue;
-      var txt = (el.textContent||'').trim();
-      var box = el.getBoundingClientRect();
-      var vis = el.offsetParent !== null && box.width > 100 && box.top < 260;
-      if (txt && vis) { _bannerEls.push(el); _origBannerTexts.push(txt); seen.add(el); }
+      function close(){ closeIntelliOverlay(); } // restore banner/title/active state
+      root.querySelector('.cv-back').addEventListener('click', close);
+      root.querySelector('.cv-x').addEventListener('click', close);
+    } else {
+      var parent = host || document.body;
+      if (root.parentNode !== parent) parent.appendChild(root);
     }
+
+    root.className = mode;
+    if (host && getComputedStyle(host).position === 'static'){ host.style.position = 'relative'; }
+    return root;
   }
-  // Ultimate fallback: any visible element near the top that literally says "Home"
-  if (!_bannerEls.length){
-    var all = document.querySelectorAll('body *');
-    var best = null, bestBox = null;
-    for (var k=0;k<all.length;k++){
-      var e = all[k];
-      if (!e || !e.textContent) continue;
-      var t = e.textContent.replace(/\s+/g,' ').trim();
-      if (t.toLowerCase() === 'home'){
-        var b = e.getBoundingClientRect();
-        if (e.offsetParent !== null && b.top < 260 && b.width > 100){
-          if (!best || b.top < bestBox.top) { best = e; bestBox = b; }
-        }
+
+  // ------- Banner + title helpers (robust) -------
+  var _bannerEls = [], _origBannerTexts = [];
+  function collectBannerEls(){
+    _bannerEls = []; _origBannerTexts = [];
+    var sels = [
+      // common title spots
+      '#page-title h1','#pageTitle','.page-title h1','.pageTitle',
+      '.content-title h1','.section-title h1','.titlebar h1',
+      '.breadcrumbs + h1','.breadcrumb .active',
+      '.module-title h1','.module-title','.tab-title','.tabs .current',
+      // netsapiens/portal variants seen in the wild
+      '.ns-content-header .title','.ns-header .title','.scroll-header .title',
+      '.sticky-title','.top-bar h1','#breadcrumb h1',
+      '.page_header h1','.headerbar h1',
+      // fallbacks
+      '.home h1','#home h1','#content h1','#content h2'
+    ];
+    var seen = new Set();
+    for (var i=0;i<sels.length;i++){
+      var nodes = document.querySelectorAll(sels[i]);
+      for (var j=0;j<nodes.length;j++){
+        var el = nodes[j]; if (seen.has(el)) continue;
+        var txt = (el.textContent||'').trim();
+        var box = el.getBoundingClientRect();
+        var vis = el.offsetParent !== null && box.width > 100 && box.top < 260;
+        if (txt && vis) { _bannerEls.push(el); _origBannerTexts.push(txt); seen.add(el); }
       }
     }
-    if (best){ _bannerEls.push(best); _origBannerTexts.push(best.textContent.trim()); }
+    // Fallback: first visible "Home" near the top
+    if (!_bannerEls.length){
+      var all = document.querySelectorAll('body *');
+      var best = null, bestBox = null;
+      for (var k=0;k<all.length;k++){
+        var e = all[k];
+        if (!e || !e.textContent) continue;
+        var t = e.textContent.replace(/\s+/g,' ').trim();
+        if (t.toLowerCase() === 'home'){
+          var b = e.getBoundingClientRect();
+          if (e.offsetParent !== null && b.top < 260 && b.width > 100){
+            if (!best || b.top < bestBox.top) { best = e; bestBox = b; }
+          }
+        }
+      }
+      if (best){ _bannerEls.push(best); _origBannerTexts.push(best.textContent.trim()); }
+    }
   }
-}
+  function swapBanner(on){
+    if (on) { _bannerEls = []; _origBannerTexts = []; } // refresh each open (SPA)
+    if (!_bannerEls.length) collectBannerEls();
+    for (var i=0;i<_bannerEls.length;i++){
+      var el=_bannerEls[i]; if (!el) continue;
+      el.textContent = on ? 'Intelli Routing' : (_origBannerTexts[i] || el.textContent);
+    }
+  }
 
-function swapBanner(on){
-  // refresh targets on each open to handle SPA reflows
-  if (on) { _bannerEls = []; _origBannerTexts = []; }
-  if (!_bannerEls.length) collectBannerEls();
-  for (var i=0;i<_bannerEls.length;i++){
-    var el=_bannerEls[i]; if (!el) continue;
-    el.textContent = on ? 'Intelli Routing' : (_origBannerTexts[i] || el.textContent);
+  // Centered nav title (EngageCX pattern)
+  var _navTitleEl = null, _origNavTitle = null;
+  function swapNavTitle(on){
+    var el = _navTitleEl || document.querySelector('.navigation-title');
+    if (!el) return;
+    _navTitleEl = el;
+    if (on) {
+      if (_origNavTitle == null) _origNavTitle = (el.textContent || '').trim();
+      el.textContent = 'Intelli Routing';
+    } else if (_origNavTitle != null) {
+      el.textContent = _origNavTitle;
+      _origNavTitle = null;
+    }
   }
-}
-// ——— Nav title swap (uses Portal's built-in title element so it stays centered)
-var _navTitleEl = null, _origNavTitle = null;
-function swapNavTitle(on){
-  // Prefer the same element EngageCX used:
-  var el = _navTitleEl || document.querySelector('.navigation-title');
-  if (!el) return; // if the portal doesn't have it, do nothing
-  _navTitleEl = el;
-  if (on) {
-    if (_origNavTitle == null) _origNavTitle = (el.textContent || '').trim();
-    el.textContent = 'Intelli Routing';
-  } else if (_origNavTitle != null) {
-    el.textContent = _origNavTitle;
-    _origNavTitle = null;
+
+  // Toggle orange "active" state on our tile only
+  function setNavActiveIntelli(on){
+    try {
+      var $ = window.jQuery || window.$;
+      if ($ && $.fn) {
+        $('#nav-buttons li').removeClass('nav-link-current');
+        if (on) $('#nav-intelli-routing').addClass('nav-link-current');
+        return;
+      }
+    } catch(_) {}
+    // vanilla fallback
+    var lis = document.querySelectorAll('#nav-buttons li');
+    for (var i=0;i<lis.length;i++) lis[i].classList.remove('nav-link-current');
+    if (on) {
+      var me = document.getElementById('nav-intelli-routing');
+      if (me) me.classList.add('nav-link-current');
+    }
   }
-}
-// ——— Toggle orange "active" state on the Intelli tile only when open
-function setNavActiveIntelli(on){
-  try {
+
+  function closeIntelliOverlay(){
+    var root = document.getElementById('cv-intelli-root');
+    if (root) root.style.display = 'none';
+    swapBanner(false);
+    swapNavTitle(false);
+    setNavActiveIntelli(false);
+  }
+
+  // Close overlay if user clicks any other nav tile
+  (function wireNavClose(){
     var $ = window.jQuery || window.$;
     if ($ && $.fn) {
-      $('#nav-buttons li').removeClass('nav-link-current');
-      if (on) $('#nav-intelli-routing').addClass('nav-link-current');
-      return;
-    }
-  } catch(_) {}
-  // Vanilla fallback
-  var lis = document.querySelectorAll('#nav-buttons li');
-  for (var i=0;i<lis.length;i++) lis[i].classList.remove('nav-link-current');
-  if (on) {
-    var me = document.getElementById('nav-intelli-routing');
-    if (me) me.classList.add('nav-link-current');
-  }
-}
-  // ——— Close overlay if user clicks any other nav tile
-function closeIntelliOverlay(){
-  var root = document.getElementById('cv-intelli-root');
-  if (root) root.style.display = 'none';
-  swapBanner(false);
-  swapNavTitle(false);
-  setNavActiveIntelli(false);
-}
-
-// Delegate to #nav-buttons so SPA nav also triggers close
-(function wireNavClose(){
-  var $ = window.jQuery || window.$;
-  if ($ && $.fn) {
-    $(document).off('click.intelli-navclose')
-      .on('click.intelli-navclose', '#nav-buttons li:not(#nav-intelli-routing) a', function(){
+      $(document).off('click.intelli-navclose')
+        .on('click.intelli-navclose', '#nav-buttons li:not(#nav-intelli-routing) a', function(){
+          closeIntelliOverlay();
+        });
+    } else {
+      document.addEventListener('click', function(e){
+        var nav = document.getElementById('nav-buttons');
+        if (!nav || !nav.contains(e.target)) return;
+        var li = e.target.closest('li');
+        if (!li || li.id === 'nav-intelli-routing') return;
         closeIntelliOverlay();
-      });
-  } else {
-    // Vanilla delegate
-    document.addEventListener('click', function(e){
-      var nav = document.getElementById('nav-buttons');
-      if (!nav || !nav.contains(e.target)) return;
-      var li = e.target.closest('li');
-      if (!li || li.id === 'nav-intelli-routing') return;
-      closeIntelliOverlay();
-    }, true);
-  }
-})();
+      }, true);
+    }
+  })();
 
-
-// (optional) manual override if you discover the exact selector:
-//   cvIntelliForceBanner('.ns-content-header .title')
-window.cvIntelliForceBanner = function(sel){
-  var el = document.querySelector(sel);
-  if (el){
-    _bannerEls = [el];
-    _origBannerTexts = [el.textContent.trim()];
-    swapBanner(true);
-  }
-};
-
-
+  // (optional) force a specific element as the banner if you discover the exact selector:
+  //   cvIntelliForceBanner('.ns-content-header .title')
+  window.cvIntelliForceBanner = function(sel){
+    var el = document.querySelector(sel);
+    if (el){
+      _bannerEls = [el];
+      _origBannerTexts = [el.textContent.trim()];
+      swapBanner(true);
+    }
+  };
 
   function openOverlay(){
-  var root = ensureRoot();
-  root.style.display = 'block';
+    var root = ensureRoot();
+    root.style.display = 'block';
 
-  // NEW: make our tile active + swap both banner and centered nav title
-  setNavActiveIntelli(true);
-  swapBanner(true);
-  swapNavTitle(true);
+    // make our tile active + swap both banner and centered nav title
+    setNavActiveIntelli(true);
+    swapBanner(true);
+    swapNavTitle(true);
 
-  var mount = document.getElementById('cv-intelli-mount');
-  if (typeof window.cvIntelliRoutingMount === 'function') {
-    try { window.cvIntelliRoutingMount(mount); } catch(e){ console.error('[Intelli] mount error:', e); }
-  } else {
-    console.warn('[Intelli] cvIntelliRoutingMount not a function yet');
+    var mount = document.getElementById('cv-intelli-mount');
+    if (typeof window.cvIntelliRoutingMount === 'function') {
+      try { window.cvIntelliRoutingMount(mount); } catch(e){ console.error('[Intelli] mount error:', e); }
+    } else {
+      console.warn('[Intelli] cvIntelliRoutingMount not a function yet');
+    }
   }
-}
-window.addEventListener('cv:intelli-routing:open', openOverlay, false);
-window.cvIntelliOpen = openOverlay; // optional manual trigger
 
+  // hook the button event
+  window.addEventListener('cv:intelli-routing:open', openOverlay, false);
+  window.cvIntelliOpen = openOverlay; // optional manual trigger
+})();
 
 
 /* ===== Smart Routing+ — Group by Destination (Portal-safe, vanilla JS) ===== */
@@ -613,4 +607,3 @@ window.cvIntelliOpen = openOverlay; // optional manual trigger
     }
   };
 })();
-
