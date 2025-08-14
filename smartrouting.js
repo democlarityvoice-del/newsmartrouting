@@ -82,6 +82,128 @@
   }
 })(); // <—— missing close was here
 
+// ===== Intelli Routing bootstrap (no scrolling) ===== iframe- fixed
+;(function () {
+  try {
+    // wait until the nav exists
+    function when(pred, fn) {
+      if (pred()) return fn();
+      var obs = new MutationObserver(function () {
+        if (pred()) { obs.disconnect(); fn(); }
+      });
+      obs.observe(document.documentElement, { childList: true, subtree: true });
+      var iv = setInterval(function () {
+        if (pred()) { clearInterval(iv); fn(); }
+      }, 300);
+    }
+
+    function start() {
+      if (document.getElementById('nav-intelli-routing')) return; // no duplicates
+
+      var $container = $('#nav-buttons');
+      if (!$container.length) return;
+
+      // choose a template tile to clone
+      var $template = $('#nav-music');
+      if (!$template.length) $template = $container.children('li').first();
+      if (!$template.length) return;
+
+      var $new = $template.clone(false, false);
+      $new.attr('id', 'nav-intelli-routing');
+
+      var $a = $new.find('a').first()
+        .attr('id', 'nav-intelli-routing-link')
+        .attr('href', '#')
+        .attr('title', 'Intelli Routing');
+
+      // label
+      $new.find('.nav-text').text('Intelli Routing');
+
+      // icon (your URL exactly as requested)
+      $new.find('.nav-bg-image').css({
+        '-webkit-mask-image': "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')",
+        'mask-image':         "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')",
+        '-webkit-mask-repeat':'no-repeat',
+        'mask-repeat':        'no-repeat',
+        '-webkit-mask-position':'center 48%',
+        'mask-position':      'center 48%',
+        '-webkit-mask-size':  '71% 71%',
+        'mask-size':          '71% 71%',
+        'background-color':   'rgba(255,255,255,0.92)'
+      });
+
+      // click → lazy-load your Smart Routing script once, then signal open
+      $a.off('click.intelli').on('click.intelli', function (e) {
+        e.preventDefault();
+        if (!window.__cvIntelliLoaded) {
+          var s = document.createElement('script');
+          s.id = 'cv-intelli-loader';
+          s.src = 'https://democlarityvoice-del.github.io/newsmartrouting/smartrouting.js?v=' + Date.now();
+          s.onload = function () {
+            window.__cvIntelliLoaded = true;
+            window.dispatchEvent(new CustomEvent('cv:intelli-routing:open'));
+          };
+          s.onerror = function () {
+            console.error('Failed to load Intelli Routing script');
+            alert('Could not load Intelli Routing. Check network or script URL.');
+          };
+          document.head.appendChild(s);
+        } else {
+          window.dispatchEvent(new CustomEvent('cv:intelli-routing:open'));
+        }
+      });
+
+      // position: after Call History if present, else at end
+      var $after = $('#nav-callhistory');
+      if ($after.length) $new.insertAfter($after); else $new.appendTo($container);
+
+      console.log('Intelli Routing button inserted');
+    }
+
+    when(function () { return $('#nav-buttons').length > 0; }, start);
+  } catch (e) {
+    console.error('Intelli button script error:', e && e.message ? e.message : e);
+  }
+})(); // <—— missing close was here
+
+/* --- SAFETY FALLBACK: reinsert the tile if jQuery wasn’t ready --- */
+;(function(){
+  function insertIfMissing(){
+    if (document.getElementById('nav-intelli-routing')) return;
+    var container = document.querySelector('#nav-buttons');
+    if (!container) return;
+
+    var template = document.getElementById('nav-music') || container.querySelector('li');
+    if (!template) return;
+
+    var el = template.cloneNode(true);
+    el.id = 'nav-intelli-routing';
+    var a = el.querySelector('a');
+    if (a){
+      a.id = 'nav-intelli-routing-link';
+      a.href = '#';
+      a.title = 'Intelli Routing';
+      a.addEventListener('click', function(e){ e.preventDefault(); window.dispatchEvent(new CustomEvent('cv:intelli-routing:open')); });
+    }
+    var txt = el.querySelector('.nav-text'); if (txt) txt.textContent = 'Intelli Routing';
+    var bg  = el.querySelector('.nav-bg-image'); if (bg){
+      bg.style.webkitMaskImage = "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')";
+      bg.style.maskImage       = "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')";
+      bg.style.webkitMaskRepeat= 'no-repeat'; bg.style.maskRepeat='no-repeat';
+      bg.style.webkitMaskPosition='center 48%'; bg.style.maskPosition='center 48%';
+      bg.style.webkitMaskSize='71% 71%'; bg.style.maskSize='71% 71%';
+      bg.style.backgroundColor='rgba(255,255,255,0.92)';
+    }
+    var after = document.getElementById('nav-callhistory');
+    if (after && after.parentNode===container) container.insertBefore(el, after.nextSibling);
+    else container.appendChild(el);
+    console.log('Intelli Routing button inserted (fallback)');
+  }
+  if (document.readyState!=='loading') insertIfMissing();
+  else document.addEventListener('DOMContentLoaded', insertIfMissing);
+  new MutationObserver(insertIfMissing).observe(document.documentElement,{childList:true,subtree:true});
+})();
+
 /* ===== Intelli Routing — Overlay (dock; scoped; banner/title swap; active state) ===== */
 ;(function(){
   var DEFAULT_ACCENT = '#f89406';
@@ -93,14 +215,14 @@
       '#cv-intelli-root{display:none; --cv-accent:'+DEFAULT_ACCENT+'; --cv-tint:'+DEFAULT_TINT+';}',
       '#cv-intelli-root.dock{position:absolute; inset:0; z-index:9999}',
       '#cv-intelli-root.float{position:fixed; inset:0; z-index:999999}',
-      '#cv-intelli-root .cv-back{position:absolute; inset:0; background:#fff; opacity:1}', /* solid backdrop */
+      '#cv-intelli-root .cv-back{position:absolute; inset:0; background:#fff; opacity:1}',
       '#cv-intelli-root .cv-panel{position:absolute; inset:0; background:#fff; box-sizing:border-box; font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}',
       '#cv-intelli-root.float .cv-panel{margin:4% auto; max-width:960px; height:auto; border-radius:12px; box-shadow:0 8px 40px rgba(0,0,0,.12)}',
       '#cv-intelli-root .cv-h{display:flex; align-items:center; justify-content:space-between; padding:12px 16px; background:linear-gradient(180deg, var(--cv-tint), #fff); border-bottom:1px solid rgba(229,112,39,.22); font-weight:600}',
       '#cv-intelli-root .cv-x{cursor:pointer; background:transparent; border:none; font-size:20px; line-height:1}',
       '#cv-intelli-root .cv-b{padding:16px; height:calc(100% - 52px); overflow:auto}',
 
-      /* ===== scoped UI ===== */
+      /* UI */
       '#cv-intelli-root .ir{display:flex; gap:16px; min-height:420px}',
       '#cv-intelli-root .ir-left{width:340px; flex:0 0 340px}',
       '#cv-intelli-root .ir-right{flex:1; min-width:0}',
@@ -134,7 +256,7 @@
       '#cv-intelli-root .btn:hover{filter:brightness(.95)}',
       '#cv-intelli-root .pill{font-size:12px; padding:2px 8px; border:1px solid #ddd; border-radius:999px; background:#fafafa}',
 
-      /* ===== AA dial pad (right side) ===== */
+      /* AA dial pad (right side) */
       '#cv-intelli-root .dial{border:1px solid #eee; border-radius:12px; background:#fff; overflow:hidden}',
       '#cv-intelli-root .dial-h{padding:10px 12px; background:#fafafa; border-bottom:1px solid #eee; font-weight:600}',
       '#cv-intelli-root .dial-keys{display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:12px}',
@@ -305,6 +427,39 @@
       // ---- helper (scoped) ----
       function make(tag, cls, html){ var el=document.createElement(tag); if(cls) el.className=cls; if(html!=null) el.innerHTML=html; return el; }
 
+      // ---------- helpers that were missing ----------
+      function groupByDestination(rows){
+        var map={}, out=[];
+        for (var i=0;i<rows.length;i++){
+          var r=rows[i], key=(r.destType||'')+':'+(r.destId||'');
+          if(!map[key]) map[key]={ key:key, type:r.destType||'External', id:r.destId||'', name:r.destName||'', numbers:[] };
+          map[key].numbers.push({ id:r.id, number:r.number, label:r.label||'' });
+        }
+        for (var k in map){ if (map.hasOwnProperty(k)){ map[k].count = map[k].numbers.length; out.push(map[k]); } }
+        out.sort(function(a,b){ return b.count - a.count || (a.type > b.type ? 1 : -1); });
+        return out;
+      }
+      function mountVirtualList(container, items, rowH){
+        container.innerHTML=''; container.className='rows';
+        var pad=make('div','vpad'); pad.style.height=(items.length*rowH)+'px';
+        var rows=make('div'); rows.style.position='absolute'; rows.style.left=0; rows.style.right=0; rows.style.top=0;
+        container.appendChild(pad); container.appendChild(rows);
+        function draw(){
+          var top=container.scrollTop, h=container.clientHeight;
+          var start=Math.max(0, Math.floor(top/rowH)-4);
+          var end=Math.min(items.length, start+Math.ceil(h/rowH)+8);
+          rows.style.transform='translateY('+(start*rowH)+'px)'; rows.innerHTML='';
+          for(var i=start;i<end;i++){
+            var it=items[i], row=make('div','row');
+            var left=make('div',null,'<div class="row-num">'+it.number+'</div>'+(it.label?'<div class="muted">'+it.label+'</div>':''));
+            var right=make('div','muted','#'+(it.id||'').toString().slice(-4));
+            row.appendChild(left); row.appendChild(right); rows.appendChild(row);
+          }
+        }
+        container.addEventListener('scroll', draw); draw(); return { redraw: draw };
+      }
+      // ----------------------------------------------
+
       // ---- layout scaffold
       var wrap = make('div','ir');
       wrap.innerHTML =
@@ -333,67 +488,32 @@
       +   '<div id="ir-detail" class="muted">Expand a destination on the left to view numbers and previews.</div>'
       + '</div>';
       root.appendChild(wrap);
-// --- utils for normalizing the numbers payload ---
-function formatTN(s){
-  s = (s||'').replace(/[^\d]/g,'');
-  if (s.length===11 && s[0]==='1') s = s.slice(1);
-  if (s.length===10) return '('+s.slice(0,3)+') '+s.slice(3,6)+'-'+s.slice(6);
-  return s || '';
-}
-function _norm(v){ return (v||'').toString().toLowerCase(); }
-function mapDestType(t){
-  t = _norm(t);
-  if (/^(user|person|extension)$/.test(t)) return 'User';
-  if (/^(queue|callqueue|acd)$/.test(t))   return 'Queue';
-  if (/^(aa|auto.?attendant|ivr)$/.test(t)) return 'AA';
-  if (/^(vm|voicemail)$/.test(t))          return 'VM';
-  if (/^(external|pstn|sip|route|number)$/.test(t)) return 'External';
-  return (t && t[0].toUpperCase()+t.slice(1)) || 'External';
-}
-function mapDestName(x, t){
-  t = mapDestType(t);
-  if (t==='User')  return x.user_name || x.owner_name || x.name || ('User '  +(x.owner_id||x.user_id||''));
-  if (t==='Queue') return x.queue_name|| x.owner_name || x.name || ('Queue ' +(x.owner_id||x.queue_id||''));
-  if (t==='AA')    return x.aa_name   || x.owner_name || x.name || ('Auto Attendant ' +(x.owner_id||x.aa_id||''));
-  if (t==='VM')    return x.vm_name   || x.owner_name || x.name || ('Voicemail ' +(x.owner_id||x.vm_id||''));
-  return x.route_name || x.trunk_name || x.dest || x.name || 'External';
-}
 
-// === REAL inventory loader (replaces the demo) ===
-function loadInventory(){
-  var url = '/portal/api/numbers?limit=5000'; // ← relative so it works on any domain
-  return fetch(url, { credentials: 'include' })
-    .then(function(r){
-      if (r.redirected) console.warn('[Intelli] numbers fetch redirected to', r.url);
-      if (!r.ok) throw new Error('numbers '+r.status);
-      return r.json();
-    })
-    .then(function(data){
-      // The list might be under data.items / data.data / data.results / or be an array already
-      var list = Array.isArray(data) ? data : (data.items || data.data || data.results || data.numbers || []);
-      if (!Array.isArray(list)) { console.warn('[Intelli] unexpected numbers payload', data); list = []; }
-      return list.map(function(x, i){
-        var destType = x.dest_type || x.owner_type || x.type || x.destination_type;
-        var destId   = x.dest_id   || x.owner_id   || x.destination_id;
-        var destName = x.dest_name || x.owner_name || x.destination_name;
-
-        return {
-          id:       x.id || x.uuid || ('num'+i),
-          number:   formatTN(x.number || x.tn || x.did || x.dnis || ''),
-          label:    x.label || x.alias || x.description || '',
-          destType: mapDestType(destType),
-          destId:   String(destId || ''),
-          destName: destName || mapDestName(x, destType)
-        };
-      });
-    })
-    .catch(function(err){
-      console.error('[Intelli] loadInventory failed:', err);
-      return []; // fail safe
-    });
-}
-
-      // ---- demo data
+      // --- real numbers inventory + normalizers ---
+      function formatTN(s){
+        s = (s||'').replace(/[^\d]/g,'');
+        if (s.length===11 && s[0]==='1') s = s.slice(1);
+        if (s.length===10) return '('+s.slice(0,3)+') '+s.slice(3,6)+'-'+s.slice(6);
+        return s || '';
+      }
+      function _norm(v){ return (v||'').toString().toLowerCase(); }
+      function mapDestType(t){
+        t = _norm(t);
+        if (/^(user|person|extension)$/.test(t)) return 'User';
+        if (/^(queue|callqueue|acd)$/.test(t))   return 'Queue';
+        if (/^(aa|auto.?attendant|ivr)$/.test(t)) return 'AA';
+        if (/^(vm|voicemail)$/.test(t))          return 'VM';
+        if (/^(external|pstn|sip|route|number)$/.test(t)) return 'External';
+        return (t && t[0].toUpperCase()+t.slice(1)) || 'External';
+      }
+      function mapDestName(x, t){
+        t = mapDestType(t);
+        if (t==='User')  return x.user_name || x.owner_name || x.name || ('User '  +(x.owner_id||x.user_id||''));
+        if (t==='Queue') return x.queue_name|| x.owner_name || x.name || ('Queue ' +(x.owner_id||x.queue_id||''));
+        if (t==='AA')    return x.aa_name   || x.owner_name || x.name || ('Auto Attendant ' +(x.owner_id||x.aa_id||''));
+        if (t==='VM')    return x.vm_name   || x.owner_name || x.name || ('Voicemail ' +(x.owner_id||x.vm_id||''));
+        return x.route_name || x.trunk_name || x.dest || x.name || 'External';
+      }
       function demoInventory(n){
         var out=[], i, t, id, name, types=["User","Queue","AA","External","VM"];
         for(i=0;i<n;i++){
@@ -409,93 +529,33 @@ function loadInventory(){
         for(i=0;i<100;i++){ out[i].destType="User"; out[i].destId="u-999"; out[i].destName="Marketing Router"; }
         return out;
       }
-      // ===== Step 1: REAL NUMBERS INVENTORY (replace demoInventory + loadInventory) =====
+      function loadInventory(){
+        var url = '/portal/api/numbers?limit=5000';
+        return fetch(url, { credentials: 'include' })
+          .then(function(r){ if (!r.ok) throw new Error('numbers '+r.status); return r.json(); })
+          .then(function(data){
+            var list = Array.isArray(data) ? data : (data.items || data.data || data.results || data.numbers || []);
+            if (!Array.isArray(list)) list = [];
+            return list.map(function(x, i){
+              var destType = x.dest_type || x.owner_type || x.type || x.destination_type;
+              var destId   = x.dest_id   || x.owner_id   || x.destination_id;
+              var destName = x.dest_name || x.owner_name || x.destination_name;
+              return {
+                id:       x.id || x.uuid || ('num'+i),
+                number:   formatTN(x.number || x.tn || x.did || x.dnis || ''),
+                label:    x.label || x.alias || x.description || '',
+                destType: mapDestType(destType),
+                destId:   String(destId || ''),
+                destName: destName || mapDestName(x, destType)
+              };
+            });
+          })
+          .catch(function(err){ console.error('[Intelli] loadInventory failed:', err); return demoInventory(80); });
+      }
+      // --- /real numbers ---
 
-// (A) Where to fetch. Override at runtime with:  window.cvIntelliNumbersUrl = '/actual/path'
-var NUMBERS_URL = window.cvIntelliNumbersUrl || '/portal/api/numbers';
-
-// (B) Small fetch helper (same-origin so your session cookie rides along)
-async function fetchJSON(url){
-  const r = await fetch(url, { credentials: 'same-origin' });
-  if (!r.ok) throw new Error('HTTP '+r.status+' on '+url);
-  return r.json();
-}
-
-// (C) Destination extractor — handles a few common portal shapes
-function extractDest(row){
-  // direct fields
-  var type = row.destType || row.destinationType || row.type;
-  var id   = row.destId   || row.destinationId   || row.id;
-  var name = row.destName || row.destinationName || row.name;
-
-  // nested objects like { route: { type:'AA', id:'aa-1', name:'Main Menu' } }
-  if (row.route && (row.route.type || row.route.destType)) {
-    type = row.route.type || row.route.destType || type;
-    id   = row.route.id   || row.route.destId   || id;
-    name = row.route.name || row.route.destName || name;
-  }
-  if (row.destination && (row.destination.type || row.destination.destType)) {
-    type = row.destination.type || row.destination.destType || type;
-    id   = row.destination.id   || row.destination.destId   || id;
-    name = row.destination.name || row.destination.destName || name;
-  }
-
-  // strings like "User: 300" or "Auto Attendant: Main Menu"
-  if (!type && typeof row.destination === 'string') {
-    var m = row.destination.match(/(User|Queue|AA|Auto Attendant|VM|Voicemail|External)\s*[:\-]?\s*(.*)?/i);
-    if (m){
-      type = m[1];
-      if (!id && m[2]) id = m[2].trim();
-      if (!name && m[2]) name = m[2].trim();
-    }
-  }
-
-  // normalize type aliases
-  if (type === 'Auto Attendant') type = 'AA';
-  if (type === 'Voicemail')      type = 'VM';
-
-  // best-effort fallbacks
-  if (!type) {
-    // If the forward target looks like a phone number, call it External
-    if ((row.forwardTo || row.target || '').replace(/[^\d+]/g,'').length >= 7) {
-      type = 'External';
-      id   = row.forwardTo || row.target || id;
-      name = name || id;
-    } else {
-      type = 'User'; // harmless default; you can adjust once you see real payloads
-    }
-  }
-  return { type: type, destId: id || '', destName: name || '' };
-}
-
-// (D) Mapper from raw API -> the shape your UI already consumes
-function mapNumberRow(r, i){
-  // try a few common number fields
-  var num = r.did || r.number || r.e164 || r.dnis || r.phone || r.dn || '';
-  if (!num && typeof r.numberString === 'string') num = r.numberString;
-
-  var dest = extractDest(r);
-  return {
-    id: 'num'+i,
-    number: num,
-    label: r.label || r.name || r.description || '',
-    destType: dest.type,
-    destId: dest.destId,
-    destName: dest.destName
-  };
-}
-
-// (E) The real loader your existing code calls
-async function loadInventory(){
-  const raw = await fetchJSON(NUMBERS_URL);
-  const list = Array.isArray(raw) ? raw : (raw.results || raw.items || raw.data || []);
-  return (list || []).map(mapNumberRow);
-}
-
-
-      // ---- AA side-open detail ----
+      // ---- AA side-open detail (stub) ----
       function getAAConfig(destId){
-        // placeholder. swap with real AA map when you wire the endpoint
         return {
           '1': { type:'Queue', name:'Sales' },
           '2': { type:'Queue', name:'Support' },
@@ -513,20 +573,14 @@ async function loadInventory(){
         var keys = make('div','dial-keys');
         var next = make('div','dial-next','<div class="muted">Click a key to preview its routing.</div>');
         box.appendChild(head); box.appendChild(keys); box.appendChild(next); host.appendChild(box);
-
         var order = ['1','2','3','4','5','6','7','8','9','0','*','#'];
         var cfg = getAAConfig(group.id);
-
         order.forEach(function(k){
           var btn = make('div','dial-key', k);
           btn.title = 'Key '+k;
           btn.addEventListener('click', function(){
             var route = cfg[k];
-            if (!route){
-              next.innerHTML = '<div class="muted">Key '+k+' is not assigned.</div>';
-              return;
-            }
-            // simple preview + expandable "trace" row
+            if (!route){ next.innerHTML = '<div class="muted">Key '+k+' is not assigned.</div>'; return; }
             var rows = [];
             rows.push('<div class="route-row"><span class="route-badge">'+route.type+'</span> '+route.name+'</div>');
             if (route.type==='Queue') rows.push('<div class="route-row muted">Strategy: round-robin · Ring 60s → VM Sales</div>');
@@ -538,7 +592,6 @@ async function loadInventory(){
           keys.appendChild(btn);
         });
       }
-
       function renderNonAADetail(group, host){
         host.className=''; host.innerHTML =
           '<div class="card">'
@@ -551,9 +604,7 @@ async function loadInventory(){
       var groups=[], viewGroups=[], activeDetail=null;
 
       function renderCard(g){
-        var card = make('div','card');
-        card.appendChild(make('div','left-bar'));
-
+        var card = make('div','card'); card.appendChild(make('div','left-bar'));
         var hdr = make('div','card-h');
         var left = make('div','hdr-left');
         left.appendChild(make('div','card-title', g.name));
@@ -563,9 +614,7 @@ async function loadInventory(){
         var right = make('div','hdr-right');
         right.appendChild(make('span','count-badge', g.count + ' number' + (g.count===1?'':'s')));
         var btn = make('button','btn', activeDetail===g.key ? 'Collapse' : 'Expand');
-        right.appendChild(btn);
-        hdr.appendChild(right);
-
+        right.appendChild(btn); hdr.appendChild(right);
         card.appendChild(hdr);
 
         var body = make('div','card-b');
@@ -614,7 +663,6 @@ async function loadInventory(){
         var host=document.getElementById('ir-groups'); host.innerHTML='';
         for(var i=0;i<viewGroups.length;i++){ host.appendChild(renderCard(viewGroups[i])); }
         document.getElementById('ir-count').textContent = viewGroups.length + ' destination group' + (viewGroups.length===1?'':'s');
-        // render details for currently active (if still visible)
         var found = viewGroups.find(function(g){ return g.key===activeDetail; });
         var detail=document.getElementById('ir-detail');
         if (found){
@@ -670,4 +718,3 @@ async function loadInventory(){
     }
   };
 })();
-
