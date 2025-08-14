@@ -350,41 +350,89 @@
         for(i=0;i<100;i++){ out[i].destType="User"; out[i].destId="u-999"; out[i].destName="Marketing Router"; }
         return out;
       }
-      function loadInventory(){ return Promise.resolve(demoInventory(350)); }
+      // ===== Step 1: REAL NUMBERS INVENTORY (replace demoInventory + loadInventory) =====
 
-      function groupByDestination(rows){
-        var map={}, k, i, r;
-        for(i=0;i<rows.length;i++){
-          r=rows[i]; k=r.destType+':'+r.destId;
-          if(!map[k]) map[k]={ key:k, type:r.destType, id:r.destId, name:r.destName, numbers:[] };
-          map[k].numbers.push({ id:r.id, number:r.number, label:r.label||'' });
-        }
-        var arr=[], key;
-        for(key in map){ if(map.hasOwnProperty(key)){ map[key].count=map[key].numbers.length; arr.push(map[key]); } }
-        arr.sort(function(a,b){ return b.count - a.count || (a.type>b.type?1:-1); });
-        return arr;
-      }
+// (A) Where to fetch. Override at runtime with:  window.cvIntelliNumbersUrl = '/actual/path'
+var NUMBERS_URL = window.cvIntelliNumbersUrl || '/portal/api/numbers';
 
-      function mountVirtualList(container, items, rowH){
-        container.innerHTML=''; container.className='rows';
-        var pad=make('div','vpad'); pad.style.height=(items.length*rowH)+'px';
-        var rows=make('div'); rows.style.position='absolute'; rows.style.left=0; rows.style.right=0; rows.style.top=0;
-        container.appendChild(pad); container.appendChild(rows);
-        function draw(){
-          var top=container.scrollTop, h=container.clientHeight;
-          var start=Math.max(0, Math.floor(top/rowH)-4);
-          var end=Math.min(items.length, start+Math.ceil(h/rowH)+8);
-          rows.style.transform='translateY('+(start*rowH)+'px)'; rows.innerHTML='';
-          var i, it, row, left, right;
-          for(i=start;i<end;i++){
-            it=items[i]; row=make('div','row');
-            left=make('div',null,'<div class="row-num">'+it.number+'</div>'+(it.label?'<div class="muted">'+it.label+'</div>':''));
-            right=make('div','muted','#'+it.id.slice(-4));
-            row.appendChild(left); row.appendChild(right); rows.appendChild(row);
-          }
-        }
-        container.addEventListener('scroll', draw); draw(); return { redraw: draw };
-      }
+// (B) Small fetch helper (same-origin so your session cookie rides along)
+async function fetchJSON(url){
+  const r = await fetch(url, { credentials: 'same-origin' });
+  if (!r.ok) throw new Error('HTTP '+r.status+' on '+url);
+  return r.json();
+}
+
+// (C) Destination extractor — handles a few common portal shapes
+function extractDest(row){
+  // direct fields
+  var type = row.destType || row.destinationType || row.type;
+  var id   = row.destId   || row.destinationId   || row.id;
+  var name = row.destName || row.destinationName || row.name;
+
+  // nested objects like { route: { type:'AA', id:'aa-1', name:'Main Menu' } }
+  if (row.route && (row.route.type || row.route.destType)) {
+    type = row.route.type || row.route.destType || type;
+    id   = row.route.id   || row.route.destId   || id;
+    name = row.route.name || row.route.destName || name;
+  }
+  if (row.destination && (row.destination.type || row.destination.destType)) {
+    type = row.destination.type || row.destination.destType || type;
+    id   = row.destination.id   || row.destination.destId   || id;
+    name = row.destination.name || row.destination.destName || name;
+  }
+
+  // strings like "User: 300" or "Auto Attendant: Main Menu"
+  if (!type && typeof row.destination === 'string') {
+    var m = row.destination.match(/(User|Queue|AA|Auto Attendant|VM|Voicemail|External)\s*[:\-]?\s*(.*)?/i);
+    if (m){
+      type = m[1];
+      if (!id && m[2]) id = m[2].trim();
+      if (!name && m[2]) name = m[2].trim();
+    }
+  }
+
+  // normalize type aliases
+  if (type === 'Auto Attendant') type = 'AA';
+  if (type === 'Voicemail')      type = 'VM';
+
+  // best-effort fallbacks
+  if (!type) {
+    // If the forward target looks like a phone number, call it External
+    if ((row.forwardTo || row.target || '').replace(/[^\d+]/g,'').length >= 7) {
+      type = 'External';
+      id   = row.forwardTo || row.target || id;
+      name = name || id;
+    } else {
+      type = 'User'; // harmless default; you can adjust once you see real payloads
+    }
+  }
+  return { type: type, destId: id || '', destName: name || '' };
+}
+
+// (D) Mapper from raw API -> the shape your UI already consumes
+function mapNumberRow(r, i){
+  // try a few common number fields
+  var num = r.did || r.number || r.e164 || r.dnis || r.phone || r.dn || '';
+  if (!num && typeof r.numberString === 'string') num = r.numberString;
+
+  var dest = extractDest(r);
+  return {
+    id: 'num'+i,
+    number: num,
+    label: r.label || r.name || r.description || '',
+    destType: dest.type,
+    destId: dest.destId,
+    destName: dest.destName
+  };
+}
+
+// (E) The real loader your existing code calls
+async function loadInventory(){
+  const raw = await fetchJSON(NUMBERS_URL);
+  const list = Array.isArray(raw) ? raw : (raw.results || raw.items || raw.data || []);
+  return (list || []).map(mapNumberRow);
+}
+
 
       // ---- AA side-open detail ----
       function getAAConfig(destId){
