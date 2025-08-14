@@ -87,7 +87,7 @@
   var DEFAULT_ACCENT = '#f89406';
   var DEFAULT_TINT   = '#FDE8CC';
 
-  // ---- nav active + centered title (uses .navigation-title) ----
+  // ---- nav active + centered title ----
   var _origNavTitle = null;
   function setActive(on){
     try {
@@ -100,12 +100,12 @@
     } catch(_) {}
     var lis = document.querySelectorAll('#nav-buttons li');
     for (var i=0;i<lis.length;i++) lis[i].classList.remove('nav-link-current');
-    if (on) { var me = document.getElementById('nav-intelli-routing'); if (me) me.classList.add('nav-link-current'); }
+    if (on) { var me=document.getElementById('nav-intelli-routing'); if (me) me.classList.add('nav-link-current'); }
   }
   function setTitle(on){
     var el = document.querySelector('.navigation-title'); if (!el) return;
     if (on) { if (_origNavTitle==null) _origNavTitle = (el.textContent||'').trim(); el.textContent = 'Intelli Routing'; }
-    else if (_origNavTitle!=null) { el.textContent = _origNavTitle; _origNavTitle = null; }
+    else if (_origNavTitle!=null) { el.textContent=_origNavTitle; _origNavTitle=null; }
   }
 
   // ---- open/close ----
@@ -115,12 +115,10 @@
 
     var content = document.getElementById('content') || document.querySelector('#page-content') || document.body;
 
-    // create/clear the slot
     var slot = document.getElementById('intelli-slot');
     if (!slot) { slot = document.createElement('div'); slot.id='intelli-slot'; content.innerHTML=''; content.appendChild(slot); }
     else { slot.innerHTML=''; }
 
-    // iframe (same-origin so we can inject)
     var iframe = document.createElement('iframe');
     iframe.id = 'intelliFrame';
     iframe.setAttribute('scrolling','yes');
@@ -139,25 +137,39 @@
       );
       doc.close();
 
-      if (typeof window.cvIntelliRoutingMount === 'function') {
-        try { window.cvIntelliRoutingMount(doc.getElementById('cv-intelli-mount')); }
-        catch(e){ console.error('[Intelli] mount error:', e); doc.getElementById('cv-intelli-mount').textContent = 'Mount error: '+(e&&e.message||e); }
-      } else {
-        doc.getElementById('cv-intelli-mount').textContent = 'Mount function not found.';
-      }
+      // Wait for your mount function to exist, then render into the iframe.
+      waitForMountThenRender(doc);
     };
 
-    // keep same-origin
-    iframe.src = 'about:blank';
+    iframe.src = 'about:blank'; // keep same-origin
+  }
+
+  function waitForMountThenRender(doc){
+    var tries = 0, maxTries = 40; // ~6s total
+    (function tick(){
+      if (typeof window.cvIntelliRoutingMount === 'function') {
+        try { window.cvIntelliRoutingMount(doc.getElementById('cv-intelli-mount')); }
+        catch(e){
+          console.error('[Intelli] mount error:', e);
+          doc.getElementById('cv-intelli-mount').textContent = 'Mount error: '+(e && e.message || e);
+        }
+        return;
+      }
+      if (++tries > maxTries) {
+        doc.getElementById('cv-intelli-mount').textContent = 'Mount function not found.';
+        return;
+      }
+      setTimeout(tick, 150);
+    })();
   }
 
   function closeIntelli(){
     setActive(false);
     setTitle(false);
-    // Let the other nav re-render #content naturally
+    // let the portal re-render #content on its own
   }
 
-  // ---- minimal CSS the mount expects (scoped to the iframe) ----
+  // ---- minimal CSS used by your mount (scoped inside iframe) ----
   function iCss(ACC, TINT){
     return [
       ':root{--cv-accent:',ACC,';--cv-tint:',TINT,'}',
@@ -197,10 +209,10 @@
     ].join('');
   }
 
-  // open via the event your nav button dispatches (lines 1–84)
+  // open via your existing event
   window.addEventListener('cv:intelli-routing:open', openIntelli, false);
 
-  // close when any other nav tile is clicked (match EngageCX behavior)
+  // close when any other nav tile is clicked
   (function wireNavClose(){
     var $ = window.jQuery || window.$;
     if ($ && $.fn) {
