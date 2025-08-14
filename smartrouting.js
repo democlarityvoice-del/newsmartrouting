@@ -314,6 +314,68 @@ function swapBanner(on){
     el.textContent = on ? 'Intelli Routing' : (_origBannerTexts[i] || el.textContent);
   }
 }
+// ——— Nav title swap (uses Portal's built-in title element so it stays centered)
+var _navTitleEl = null, _origNavTitle = null;
+function swapNavTitle(on){
+  // Prefer the same element EngageCX used:
+  var el = _navTitleEl || document.querySelector('.navigation-title');
+  if (!el) return; // if the portal doesn't have it, do nothing
+  _navTitleEl = el;
+  if (on) {
+    if (_origNavTitle == null) _origNavTitle = (el.textContent || '').trim();
+    el.textContent = 'Intelli Routing';
+  } else if (_origNavTitle != null) {
+    el.textContent = _origNavTitle;
+    _origNavTitle = null;
+  }
+}
+// ——— Toggle orange "active" state on the Intelli tile only when open
+function setNavActiveIntelli(on){
+  try {
+    var $ = window.jQuery || window.$;
+    if ($ && $.fn) {
+      $('#nav-buttons li').removeClass('nav-link-current');
+      if (on) $('#nav-intelli-routing').addClass('nav-link-current');
+      return;
+    }
+  } catch(_) {}
+  // Vanilla fallback
+  var lis = document.querySelectorAll('#nav-buttons li');
+  for (var i=0;i<lis.length;i++) lis[i].classList.remove('nav-link-current');
+  if (on) {
+    var me = document.getElementById('nav-intelli-routing');
+    if (me) me.classList.add('nav-link-current');
+  }
+}
+  // ——— Close overlay if user clicks any other nav tile
+function closeIntelliOverlay(){
+  var root = document.getElementById('cv-intelli-root');
+  if (root) root.style.display = 'none';
+  swapBanner(false);
+  swapNavTitle(false);
+  setNavActiveIntelli(false);
+}
+
+// Delegate to #nav-buttons so SPA nav also triggers close
+(function wireNavClose(){
+  var $ = window.jQuery || window.$;
+  if ($ && $.fn) {
+    $(document).off('click.intelli-navclose')
+      .on('click.intelli-navclose', '#nav-buttons li:not(#nav-intelli-routing) a', function(){
+        closeIntelliOverlay();
+      });
+  } else {
+    // Vanilla delegate
+    document.addEventListener('click', function(e){
+      var nav = document.getElementById('nav-buttons');
+      if (!nav || !nav.contains(e.target)) return;
+      var li = e.target.closest('li');
+      if (!li || li.id === 'nav-intelli-routing') return;
+      closeIntelliOverlay();
+    }, true);
+  }
+})();
+
 
 // (optional) manual override if you discover the exact selector:
 //   cvIntelliForceBanner('.ns-content-header .title')
@@ -329,20 +391,22 @@ window.cvIntelliForceBanner = function(sel){
 
 
   function openOverlay(){
-    var root=ensureRoot();
-    root.style.display='block';
-    swapBanner(true);                    // <-- change "Home" to "Intelli Routing"
-    var mount=document.getElementById('cv-intelli-mount');
-    if (typeof window.cvIntelliRoutingMount==='function'){
-      try { window.cvIntelliRoutingMount(mount); } catch(e){ console.error('[Intelli] mount error:', e); }
-    } else {
-      console.warn('[Intelli] cvIntelliRoutingMount not a function yet');
-    }
-  }
+  var root = ensureRoot();
+  root.style.display = 'block';
 
-  window.addEventListener('cv:intelli-routing:open', openOverlay, false);
-  window.cvIntelliOpen = openOverlay; // manual test helper
-})();
+  // NEW: make our tile active + swap both banner and centered nav title
+  setNavActiveIntelli(true);
+  swapBanner(true);
+  swapNavTitle(true);
+
+  var mount = document.getElementById('cv-intelli-mount');
+  if (typeof window.cvIntelliRoutingMount === 'function') {
+    try { window.cvIntelliRoutingMount(mount); } catch(e){ console.error('[Intelli] mount error:', e); }
+  } else {
+    console.warn('[Intelli] cvIntelliRoutingMount not a function yet');
+  }
+}
+
 
 
 /* ===== Smart Routing+ — Group by Destination (Portal-safe, vanilla JS) ===== */
