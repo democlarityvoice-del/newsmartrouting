@@ -826,10 +826,10 @@
     var id   = _norm(r.destId);
     var name = _norm(r.destName);
 
-    // Stable key: for Users, always group by destId; otherwise fallback
+    // For Users: force key by destId only
     var key;
     if (type === 'User' && id) {
-      key = type + '|id:' + id;
+      key = 'User|id:' + id;
     } else {
       key = type + '|' + (id ? ('id:'+id) : ('name:'+_normKey(name)));
     }
@@ -858,6 +858,7 @@
   });
   return out;
 }
+
 
   /* ===================== UI helpers ===================== */
   function ensureStyle(){
