@@ -949,28 +949,26 @@ function titleForGroup(g, userDir){
 
   /* ===================== GROUPING ===================== */
   function groupByDestination(rows){
-    var map={}, out=[];
-    for (var i=0;i<rows.length;i++){
-      var r=rows[i];
-      var type=r.destType||'External';
-      var key;
-      if (type==='User'){
-        var nm=(r.destName||'').trim();
-        var id=(r.destId||'').trim();
-        // never merge on bare "User"
-        var userKey = id || (nm && nm.toLowerCase()!=='user' ? nm : ('unknown-'+(r.id||i)));
-        key='User:'+userKey;
-        if(!map[key]) map[key]={ key:key, type:'User', id:userKey, name:(nm && nm.toLowerCase()!=='user')?nm:'', numbers:[] };
-      }else{
-        key=type+':'+(r.destId||r.destName||'');
-        if(!map[key]) map[key]={ key:key, type:type, id:String(r.destId||''), name:r.destName||'', numbers:[] };
-      }
-      map[key].numbers.push({ id:r.id, number:r.number, label:r.label||'' });
-    }
-    for (var k in map){ if(map.hasOwnProperty(k)){ map[k].count=map[k].numbers.length; out.push(map[k]); } }
-    out.sort(function(a,b){ return b.count - a.count || (a.type > b.type ? 1 : -1); });
-    return out;
+  var map = {}, out = [];
+  for (var i=0;i<rows.length;i++){
+    var r = rows[i];
+    var type = r.destType || 'External';
+    var id   = (type==='User' || type==='AA' || type==='Queue') ? (r.destId || extFromDestination(type, r.destName)) : (r.destId || '');
+    var key  = type + ':' + (id || r.destName || '');
+    if (!map[key]) map[key] = {
+      key: key,
+      type: type,
+      id: String(id || ''),
+      name: r.destName || '',
+      numbers: []
+    };
+    map[key].numbers.push({ id:r.id, number:r.number, label:r.label||'' });
   }
+  for (var k in map){ if (map.hasOwnProperty(k)){ map[k].count = map[k].numbers.length; out.push(map[k]); } }
+  out.sort(function(a,b){ return b.count - a.count || (a.type > b.type ? 1 : -1); });
+  return out;
+}
+
 
   /* ===================== MOUNT APP ===================== */
   function cvIntelliRoutingMount(root){
