@@ -535,25 +535,339 @@
 
 /* ===== Smart Routing+ — Group by Destination (Portal-safe, vanilla JS) ===== */
 ;(function(){
+  // expose mount on window
   window.cvIntelliRoutingMount = function(root){
     try {
       root.innerHTML = '';
 
-      // ---- helper (scoped) ----
+      // ---- tiny DOM helper ----
       function make(tag, cls, html){ var el=document.createElement(tag); if(cls) el.className=cls; if(html!=null) el.innerHTML=html; return el; }
 
-      // ---------- helpers ----------
+      // ---------- INVENTORY HELPERS ----------
+      function addParam(url, key, val){
+        try {
+          var u = new URL(url, location.origin);
+          if (!u.searchParams.has(key)) u.searchParams.set(key, val);
+          return u.pathname + u.search;
+        } catch (_) {
+          return url + (url.indexOf('?') === -1 ? '?' : '&') + encodeURIComponent(key) + '=' + encodeURIComponent(val);
+        }
+      }
+      async function fetchJSON(url){
+        const r = await fetch(url, {
+          credentials: 'include',
+          headers: { 'Accept': 'application/json, text/javascript, */*; q=0.01', 'X-Requested-With': 'XMLHttpRequest' }
+        });
+        const ct = (r.headers.get('content-type')||'').toLowerCase();
+        if (!r.ok) throw new Error('HTTP '+r.status+' on '+url);
+        if (ct.includes('application/json') || ct.includes('text/json')) return r.json();
+        const txt = await r.text();
+        throw new Error('Non-JSON response from '+url+(r.redirected ? ' (redirected to '+r.url+')' : '')+' — first 80 chars: '+txt.slice(0,80));
+      }
+      function formatTN(s){
+        s = (s||'').replace(/[^\d]/g,'');
+        if (s.length===11 && s[0]==='1') s=s.slice(1);
+        if (s.length===10) return '('+s.slice(0,3)+') '+s.slice(3,6)+'-'+s.slice(6);
+        return s || '';
+      }
+      function _norm(v){ return (v||'').toString().toLowerCase(); }
+      function mapDestType(t){
+        t = _norm(t);
+        if (/^(user|person|extension)$/.test(t)) return 'User';
+        if (/^(queue|callqueue|acd)$/.test(t))   return 'Queue';
+        if (/^(aa|auto.?attendant|ivr)$/.test(t)) return 'AA';
+        if (/^(vm|voicemail)$/.test(t))          return 'VM';
+        if (/^(external|pstn|sip|route|number)$/.test(t)) return 'External';
+        return (t && t[0].toUpperCase()+t.slice(1)) || 'External';
+      }
+      function mapDestName(x, t){
+        t = mapDestType(t);
+        if (t==='User')  return x.user_name || x.owner_name || x.name || ('User '  +(x.owner_id||x.user_id||''));
+        if (t==='Queue') return x.queue_name|| x.owner_name || x.name || ('Queue ' +(x.owner_id||x.queue_id||''));
+        if (t==='AA')    return x.aa_name   || x.owner_name || x.name || ('Auto Attendant ' +(x.owner_id||x.aa_id||''));
+        if (t==='VM')    return x.vm_name   || x.owner_name || x.name || ('Voicemail ' +(x.owner_id||x.vm_id||''));
+        return x.route_name || x.trunk_name || x.dest || x.name || 'External';
+      }
+
+      // ---- numbers endpoint autodetect (API first) ----
+      var NUMBERS_URL = window.cvIntelliNumbersUrl || null;
+      async function probeNumbersUrl(){
+        if (NUMBERS_URL) return NUMBERS_URL;
+        const candidates = [
+          '/portal/api/numbers',
+          '/portal/api/v1/numbers',
+          '/portal/ajax/numbers',
+          '/portal/ajax/dids',
+          '/portal/inventory/numbers',
+          '/portal/inventory/dids',
+          '/portal/inventory/tns',
+          '/api/numbers',
+          '/ns-api/numbers',
+          '/portal/number/list'
+        ];
+        for (let i=0;i<candidates.length;i++){
+          try {
+            const data = await fetchJSON(addParam(candidates[i], 'limit', '25'));
+            const list = Array.isArray(data) ? data : (data.items || data.results || data.data || data.numbers);
+            if (Array.isArray(list)) { console.log('[Intelli] numbers endpoint:', candidates[i]); NUMBERS_URL = candidates[i]; return NUMBERS_URL; }
+          } catch(_) {}
+        }
+        throw new Error('No JSON endpoint; falling back to iframe scrape.');
+      }
+
+      // ---- iframe scrape of Inventory (DataTables with pagination) ----
+      function scrapeInventoryViaIframe(){
+        return new Promise(function(resolve, reject){
+          try{
+            var frame = document.getElementById('cv-intelli-invframe');
+            if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+            frame = document.createElement('iframe');
+            frame.id = 'cv-intelli-invframe';
+            frame.src = '/portal/inventory';
+            frame.setAttribute('aria-hidden','true');
+            frame.style.position='fixed'; frame.style.left='-9999px'; frame.style.top='-9999px';
+            frame.style.width='1px'; frame.style.height='1px'; frame.style.opacity='0';
+            document.body.appendChild(frame);
+
+            var killed=false, timeout=setTimeout(function(){ cleanup(); reject(new Error('Inventory iframe timed out')); }, 45000);
+            function cleanup(){ if (killed) return; killed=true; clearTimeout(timeout); if (frame && frame.parentNode) frame.parentNode.removeChild(frame); }
+
+            frame.onload = function(){
+              try{
+                var win = frame.contentWindow, doc = win.document, tries=0;
+                (function waitDT(){
+                  tries++;
+                  var $ = win.jQuery || win.$;
+                  var table = doc.querySelector('table.dataTable') || doc.querySelector('table');
+                  if ($ && $.fn && $.fn.dataTable && table) hook($, table);
+                  else if (tries<160) setTimeout(waitDT, 250);
+                  else { cleanup(); reject(new Error('Inventory table not found')); }
+                })();
+
+                function hook($, table){
+                  var dt = $(table).DataTable ? $(table).DataTable() :
+                           ($(table).dataTable && $(table).dataTable().api ? $(table).dataTable().api() : null);
+                  if (!dt){ cleanup(); return reject(new Error('DataTables not active on inventory table')); }
+
+                  try{ dt.page.len(100).draw(false); }catch(_){}
+                  var out=[], seen=new Set();
+
+                  function parseUserExt(s1, s2){
+                    var hay = ((s1||'') + ' ' + (s2||'')).replace(/\s+/g,' ');
+                    var m = hay.match(/\b(?:ext(?:ension)?\.?|x|#)?\s*(\d{2,6})\b/i);
+                    return m ? m[1] : '';
+                  }
+
+                  function collectPage(){
+                    dt.rows({page:'current'}).every(function(){
+                      var tr = this.node();
+                      var tds = tr && tr.querySelectorAll ? tr.querySelectorAll('td') : [];
+                      var num='', label='', type='', name='';
+                      if (tds.length){
+                        num   = (tds[0].textContent||'').trim();
+                        label = (tds[1] && tds[1].textContent || '').trim();
+                        for (var i=2;i<tds.length;i++){
+                          var t=(tds[i].textContent||'').trim();
+                          var m=t.match(/(User|Queue|Auto Attendant|AA|Voicemail|VM|External)/i);
+                          if(m){ type=m[1]; name=t.replace(m[0],'').replace(/^\s*[:\-–]\s*/,'').trim(); break; }
+                        }
+                      }
+                      var key = (num || '').replace(/[^\d]/g,'');
+                      if (!key || seen.has(key)) return;
+                      seen.add(key);
+
+                      var dType = mapDestType(type || 'External');
+                      var dId   = '';
+                      var dName = name || '';
+
+                      if (dType === 'User'){
+                        dId = parseUserExt(name, label);
+                        if (!dId && dName) dId = 'u-'+dName.toLowerCase().replace(/[^\w]+/g,'-');
+                      }
+
+                      out.push({
+                        id:       'n'+key.slice(-8),
+                        number:   formatTN(num),
+                        label:    label,
+                        destType: dType,
+                        destId:   String(dId || ''),
+                        destName: dName || (dType==='User' && dId ? ('User '+dId) : (dType || 'External'))
+                      });
+                    });
+                  }
+
+                  $(table).on('draw.dt', function(){
+                    collectPage();
+                    var info = dt.page.info();
+                    if (info.page < info.pages - 1){
+                      dt.page('next').draw(false);
+                    } else {
+                      cleanup();
+                      resolve(out);
+                    }
+                  });
+
+                  collectPage();
+                  dt.draw(false);
+                }
+              }catch(e){ cleanup(); reject(e); }
+            };
+          }catch(ex){ reject(ex); }
+        });
+      }
+
+      // ---- main numbers loader (API → fallback iframe) ----
+      async function loadInventory(){
+        try{
+          var base = await probeNumbersUrl();
+          var raw  = await fetchJSON(addParam(base,'limit','5000'));
+          var list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
+          if (!Array.isArray(list) || !list.length) throw new Error('Endpoint returned no items: ' + base);
+          return list.map(function(x, i){
+            var destType = x.dest_type || x.owner_type || x.type || x.destination_type;
+            var destId   = x.dest_id   || x.owner_id   || x.destination_id || x.owner_ext || x.ext;
+            var destName = x.dest_name || x.owner_name || x.destination_name;
+            return {
+              id:       x.id || x.uuid || ('num'+i),
+              number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
+              label:    x.label || x.alias || x.description || x.name || '',
+              destType: mapDestType(destType),
+              destId:   (destId==null ? '' : String(destId)),
+              destName: destName || mapDestName(x, destType)
+            };
+          });
+        }catch(apiErr){
+          console.warn('[Intelli] API numbers failed — falling back to iframe scrape:', apiErr && apiErr.message ? apiErr.message : apiErr);
+          return await scrapeInventoryViaIframe();
+        }
+      }
+
+      // ---------- USER DIRECTORY (names/labels) ----------
+      var USERS_URL = window.cvIntelliUsersUrl || null;
+
+      async function probeUsersUrl(){
+        if (USERS_URL) return USERS_URL;
+        const candidates = [
+          '/portal/api/users',
+          '/portal/api/v1/users',
+          '/portal/ajax/users',
+          '/portal/ajax/user/list',
+          '/api/users',
+          '/ns-api/users'
+        ];
+        for (let i=0;i<candidates.length;i++){
+          try {
+            const data = await fetchJSON(addParam(candidates[i], 'limit', '1'));
+            const list = Array.isArray(data) ? data : (data.items || data.results || data.data || data.users);
+            if (Array.isArray(list)) { console.log('[Intelli] users endpoint:', candidates[i]); USERS_URL = candidates[i]; return USERS_URL; }
+          } catch(_) {}
+        }
+        throw new Error('No users JSON endpoint; will scrape Users UI.');
+      }
+
+      function mkUserDisplay(u){
+        const ext   = String(u.ext || u.extension || u.exten || u.login || u.username || '').trim();
+        const first = (u.first_name || u.first || '').trim();
+        const last  = (u.last_name  || u.last  || '').trim();
+        const base  = (u.display_name || u.full_name || u.name || ((first||last) ? (first+' '+last).trim() : '') || '').trim();
+        const id    = String(u.id || u.user_id || u.uuid || u.uid || ext).trim();
+        const label = base || ('User ' + (ext || id));
+        return { id, ext, label: ext ? (label + ' ('+ext+')') : label };
+      }
+
+      // small iframe scrape of Users page (name + extension)
+      async function scrapeUsersViaIframe(){
+        return new Promise(function(resolve, reject){
+          try{
+            var frame = document.getElementById('cv-intelli-usersframe');
+            if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+            frame = document.createElement('iframe');
+            frame.id = 'cv-intelli-usersframe';
+            frame.src = '/portal/users';            // most installs
+            frame.setAttribute('aria-hidden','true');
+            frame.style.position='fixed'; frame.style.left='-9999px'; frame.style.top='-9999px';
+            frame.style.width='1px'; frame.style.height='1px'; frame.style.opacity='0';
+            document.body.appendChild(frame);
+
+            var killed=false, timeout=setTimeout(function(){ cleanup(); reject(new Error('Users iframe timed out')); }, 30000);
+            function cleanup(){ if (killed) return; killed=true; clearTimeout(timeout); if (frame && frame.parentNode) frame.parentNode.removeChild(frame); }
+
+            frame.onload = function(){
+              try{
+                var win = frame.contentWindow, doc = win.document;
+                // find a table-like list
+                var rows = [].slice.call(doc.querySelectorAll('table tr, .list tbody tr, .table tr'));
+                var byId = Object.create(null), byExt = Object.create(null);
+                rows.forEach(function(tr){
+                  var tds = tr.querySelectorAll ? tr.querySelectorAll('td,th') : [];
+                  if (!tds || tds.length < 2) return;
+                  var text = [].map.call(tds, td => (td.textContent||'').trim());
+                  var name = (text[0] || '').trim();
+                  var ext  = '';
+                  for (var i=1;i<text.length;i++){
+                    var m = text[i].match(/\b(\d{2,6})\b/);
+                    if (m){ ext = m[1]; break; }
+                  }
+                  if (!name || !ext) return;
+                  var id = ext;
+                  byId[id]  = name + ' ('+ext+')';
+                  byExt[ext]= name + ' ('+ext+')';
+                });
+                cleanup();
+                resolve({ byId, byExt });
+              }catch(e){ cleanup(); reject(e); }
+            };
+          }catch(ex){ reject(ex); }
+        });
+      }
+
+      async function loadUserDirectory(){
+        try {
+          const url  = await probeUsersUrl();
+          const raw  = await fetchJSON(addParam(url, 'limit', '5000'));
+          const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.users || []);
+          const byId = Object.create(null), byExt = Object.create(null);
+          list.forEach(u => {
+            const d = mkUserDisplay(u);
+            if (!d) return;
+            if (d.id)  byId[d.id]  = d.label;
+            if (d.ext) byExt[d.ext] = d.label;
+          });
+          return { byId, byExt };
+        } catch(e){
+          console.warn('[Intelli] users JSON failed — scraping Users UI:', e && e.message ? e.message : e);
+          return await scrapeUsersViaIframe();
+        }
+      }
+
+      function nameForUserGroup(g, dir){
+        // try direct id
+        if (dir && dir.byId && dir.byId[g.id]) return dir.byId[g.id];
+        // extension-ish id
+        if (dir && dir.byExt && /^\d{2,6}$/.test(g.id) && dir.byExt[g.id]) return dir.byExt[g.id];
+        // any existing readable name
+        if (g.name && g.name.toLowerCase()!=='user') return g.name;
+        // generic fallback
+        return g.id ? ('User ' + g.id) : 'User';
+      }
+
+      // ---------- GROUPING + VIRTUAL LIST ----------
       function groupByDestination(rows){
         var map={}, out=[];
         for (var i=0;i<rows.length;i++){
-          var r=rows[i], key=(r.destType||'')+':'+(r.destId||'');
-          if(!map[key]) map[key]={ key:key, type:r.destType||'External', id:r.destId||'', name:r.destName||'', numbers:[] };
+          var r=rows[i];
+          // for Users, prefer id; fall back to name to keep them separate
+          var type = r.destType || 'External';
+          var keyId = (type==='User') ? (r.destId || r.destName || '') : (r.destId || '');
+          var key = type + ':' + keyId;
+          if(!map[key]) map[key]={ key:key, type:type, id:String(keyId||''), name:r.destName||'', numbers:[] };
           map[key].numbers.push({ id:r.id, number:r.number, label:r.label||'' });
         }
         for (var k in map){ if (map.hasOwnProperty(k)){ map[k].count = map[k].numbers.length; out.push(map[k]); } }
         out.sort(function(a,b){ return b.count - a.count || (a.type > b.type ? 1 : -1); });
         return out;
       }
+
       function mountVirtualList(container, items, rowH){
         container.innerHTML=''; container.className='rows';
         var pad=make('div','vpad'); pad.style.height=(items.length*rowH)+'px';
@@ -573,9 +887,8 @@
         }
         container.addEventListener('scroll', draw); draw(); return { redraw: draw };
       }
-      // ----------------------------------------------
 
-      // ---- layout scaffold
+      // ---------- LAYOUT ----------
       var wrap = make('div','ir');
       wrap.innerHTML =
         '<div class="ir-left">'
@@ -604,214 +917,7 @@
       + '</div>';
       root.appendChild(wrap);
 
-// ===== REAL numbers inventory: auto-detect endpoint (override with window.cvIntelliNumbersUrl) =====
-// ===== REAL numbers inventory: API + iframe fallback =====
-var NUMBERS_URL = window.cvIntelliNumbersUrl || null;
-
-function addParam(url, key, val){
-  try {
-    var u = new URL(url, location.origin);
-    if (!u.searchParams.has(key)) u.searchParams.set(key, val);
-    return u.pathname + u.search;
-  } catch (_) {
-    return url + (url.indexOf('?') === -1 ? '?' : '&') + encodeURIComponent(key) + '=' + encodeURIComponent(val);
-  }
-}
-
-async function fetchJSON(url){
-  const r = await fetch(url, {
-    credentials: 'include',
-    headers: {
-      'Accept': 'application/json, text/javascript, */*; q=0.01',
-      'X-Requested-With': 'XMLHttpRequest'
-    }
-  });
-  const ct = (r.headers.get('content-type') || '').toLowerCase();
-  if (!r.ok) throw new Error('HTTP '+r.status+' on '+url);
-  if (ct.includes('application/json') || ct.includes('text/json')) return r.json();
-  const txt = await r.text();
-  throw new Error('Non-JSON response from '+url+(r.redirected ? ' (redirected to '+r.url+')' : '')+' — first 80 chars: '+txt.slice(0,80));
-}
-
-async function probeNumbersUrl(){
-  if (NUMBERS_URL) return NUMBERS_URL;
-  const candidates = [
-    '/portal/api/numbers',
-    '/portal/api/v1/numbers',
-    '/portal/ajax/numbers',
-    '/portal/ajax/dids',
-    '/portal/inventory/numbers',
-    '/portal/inventory/dids',
-    '/portal/inventory/tns',
-    '/api/numbers',
-    '/ns-api/numbers',
-    '/portal/number/list'
-  ];
-  for (var i=0;i<candidates.length;i++){
-    try {
-      const data = await fetchJSON(addParam(candidates[i], 'limit', '25'));
-      const list = Array.isArray(data) ? data : (data.items || data.results || data.data || data.numbers);
-      if (Array.isArray(list)) { console.log('[Intelli] numbers endpoint:', candidates[i]); NUMBERS_URL = candidates[i]; return NUMBERS_URL; }
-    } catch(_){ /* try next */ }
-  }
-  // none gave JSON → we’ll scrape the UI.
-  throw new Error('No JSON endpoint; falling back to iframe scrape.');
-}
-
-function formatTN(s){
-  s = (s||'').replace(/[^\d]/g,'');
-  if (s.length===11 && s[0]==='1') s = s.slice(1);
-  if (s.length===10) return '('+s.slice(0,3)+') '+s.slice(3,6)+'-'+s.slice(6);
-  return s || '';
-}
-function _norm(v){ return (v||'').toString().toLowerCase(); }
-function mapDestType(t){
-  t = _norm(t);
-  if (/^(user|person|extension)$/.test(t)) return 'User';
-  if (/^(queue|callqueue|acd)$/.test(t))   return 'Queue';
-  if (/^(aa|auto.?attendant|ivr)$/.test(t)) return 'AA';
-  if (/^(vm|voicemail)$/.test(t))          return 'VM';
-  if (/^(external|pstn|sip|route|number)$/.test(t)) return 'External';
-  return (t && t[0].toUpperCase()+t.slice(1)) || 'External';
-}
-function mapDestName(x, t){
-  t = mapDestType(t);
-  if (t==='User')  return x.user_name || x.owner_name || x.name || ('User '  +(x.owner_id||x.user_id||''));
-  if (t==='Queue') return x.queue_name|| x.owner_name || x.name || ('Queue ' +(x.owner_id||x.queue_id||''));
-  if (t==='AA')    return x.aa_name   || x.owner_name || x.name || ('Auto Attendant ' +(x.owner_id||x.aa_id||''));
-  if (t==='VM')    return x.vm_name   || x.owner_name || x.name || ('Voicemail ' +(x.owner_id||x.vm_id||''));
-  return x.route_name || x.trunk_name || x.dest || x.name || 'External';
-}
-
-/* ---------- iframe scraper (Inventory page DataTable) ---------- */
-function scrapeInventoryViaIframe(){
-  return new Promise(function(resolve, reject){
-    try{
-      var frame = document.getElementById('cv-intelli-invframe');
-      if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
-      frame = document.createElement('iframe');
-      frame.id = 'cv-intelli-invframe';
-      frame.src = '/portal/inventory';
-      frame.setAttribute('aria-hidden','true');
-      frame.style.position='fixed'; frame.style.left='-9999px'; frame.style.top='-9999px';
-      frame.style.width='1px'; frame.style.height='1px'; frame.style.opacity='0';
-      document.body.appendChild(frame);
-
-      var killed=false, timeout=setTimeout(function(){ cleanup(); reject(new Error('Inventory iframe timed out')); }, 45000);
-      function cleanup(){ if (killed) return; killed=true; clearTimeout(timeout); if (frame && frame.parentNode) frame.parentNode.removeChild(frame); }
-
-      frame.onload = function(){
-        try{
-          var win = frame.contentWindow, doc = win.document, tries=0;
-          (function waitDT(){
-            tries++;
-            var $ = win.jQuery || win.$;
-            var table = doc.querySelector('table.dataTable') || doc.querySelector('table');
-            if ($ && $.fn && $.fn.dataTable && table) hook($, table);
-            else if (tries<160) setTimeout(waitDT, 250);
-            else { cleanup(); reject(new Error('Inventory table not found')); }
-          })();
-
-          function hook($, table){
-            var dt = $(table).DataTable ? $(table).DataTable() :
-                     ($(table).dataTable && $(table).dataTable().api ? $(table).dataTable().api() : null);
-            if (!dt){ cleanup(); return reject(new Error('DataTables not active on inventory table')); }
-
-            try{ dt.page.len(100).draw(false); }catch(_){}
-            var out=[], seen=new Set();
-
-            function collectPage(){
-              dt.rows({page:'current'}).every(function(){
-                var tr = this.node();
-                var tds = tr && tr.querySelectorAll ? tr.querySelectorAll('td') : [];
-                var num='', label='', type='', name='';
-                if (tds.length){
-                  num = (tds[0].textContent||'').trim();
-                  label = (tds[1] && tds[1].textContent || '').trim();
-                  for (var i=2;i<tds.length;i++){
-                    var t=(tds[i].textContent||'').trim();
-                    var m=t.match(/(User|Queue|Auto Attendant|AA|Voicemail|VM|External)/i);
-                    if(m){ type=m[1]; name=t.replace(m[0],'').replace(/^\s*[:\-–]\s*/,'').trim(); break; }
-                  }
-                }
-                var key = (num || '').replace(/[^\d]/g,'');
-                if (key && !seen.has(key)){
-                  seen.add(key);
-                  out.push({
-                    id: 'n'+key.slice(-8),
-                    number: formatTN(num),
-                    label:  label,
-                    destType: mapDestType(type||'External'),
-                    destId: '',
-                    destName: name || ''
-                  });
-                }
-              });
-            }
-
-            $(table).on('draw.dt', function(){
-              collectPage();
-              var info = dt.page.info();
-              if (info.page < info.pages - 1){
-                dt.page('next').draw(false);
-              } else {
-                cleanup();
-                resolve(out);
-              }
-            });
-
-            // kick off
-            collectPage();
-            dt.draw(false);
-          }
-        }catch(e){ cleanup(); reject(e); }
-      };
-    }catch(ex){ reject(ex); }
-  });
-}
-
-/* ---------- main loader ---------- */
-async function loadInventory(){
-  try{
-    // try JSON API first
-    var base = await probeNumbersUrl();
-    var raw  = await fetchJSON(addParam(base,'limit','5000'));
-    var list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
-    if (!Array.isArray(list) || !list.length) throw new Error('Endpoint returned no items: ' + base);
-    return list.map(function(x, i){
-      var destType = x.dest_type || x.owner_type || x.type || x.destination_type;
-      var destId   = x.dest_id   || x.owner_id   || x.destination_id;
-      var destName = x.dest_name || x.owner_name || x.destination_name;
-      return {
-        id:       x.id || x.uuid || ('num'+i),
-        number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
-        label:    x.label || x.alias || x.description || x.name || '',
-        destType: mapDestType(destType),
-        destId:   String(destId || ''),
-        destName: destName || mapDestName(x, destType)
-      };
-    });
-  }catch(apiErr){
-    console.warn('[Intelli] API numbers failed — falling back to iframe scrape:', apiErr && apiErr.message ? apiErr.message : apiErr);
-    return await scrapeInventoryViaIframe();
-  }
-}
-// ===== /REAL numbers inventory =====
-
-// ===== /REAL numbers inventory =====
-
-      // ---- AA side-open detail (stub) ----
-      function getAAConfig(destId){
-        return {
-          '1': { type:'Queue', name:'Sales' },
-          '2': { type:'Queue', name:'Support' },
-          '3': { type:'AA',    name:'Spanish Menu' },
-          '0': { type:'User',  name:'Operator (User 300)' },
-          '*': { type:'VM',    name:'Main Voicemail' },
-          '#': { type:'Repeat',name:'Repeat Menu' },
-          't': { type:'Timeout', name:'Main VM (60s)' }
-        };
-      }
+      // ---- AA detail (stub) ----
       function renderAADetail(group, host){
         host.className=''; host.innerHTML='';
         var box = make('div','dial');
@@ -820,20 +926,11 @@ async function loadInventory(){
         var next = make('div','dial-next','<div class="muted">Click a key to preview its routing.</div>');
         box.appendChild(head); box.appendChild(keys); box.appendChild(next); host.appendChild(box);
         var order = ['1','2','3','4','5','6','7','8','9','0','*','#'];
-        var cfg = getAAConfig(group.id);
         order.forEach(function(k){
           var btn = make('div','dial-key', k);
           btn.title = 'Key '+k;
           btn.addEventListener('click', function(){
-            var route = cfg[k];
-            if (!route){ next.innerHTML = '<div class="muted">Key '+k+' is not assigned.</div>'; return; }
-            var rows = [];
-            rows.push('<div class="route-row"><span class="route-badge">'+route.type+'</span> '+route.name+'</div>');
-            if (route.type==='Queue') rows.push('<div class="route-row muted">Strategy: round-robin · Ring 60s → VM Sales</div>');
-            if (route.type==='User')  rows.push('<div class="route-row muted">Rings user, then → User VM</div>');
-            if (route.type==='AA')    rows.push('<div class="route-row muted">Press 1 for Sales · 2 for Support · 0 Operator</div>');
-            if (k==='t')              rows.push('<div class="route-row muted">Timeout: 5s of silence → Main VM</div>');
-            next.innerHTML = '<div style="font-weight:600;margin-bottom:6px">Key '+k+'</div>'+rows.join('');
+            next.innerHTML = '<div style="font-weight:600;margin-bottom:6px">Key '+k+'</div><div class="route-row muted">Preview not wired yet.</div>';
           });
           keys.appendChild(btn);
         });
@@ -842,7 +939,7 @@ async function loadInventory(){
         host.className=''; host.innerHTML =
           '<div class="card">'
         + '  <div class="card-h"><div class="hdr-left"><div class="card-title">'+group.name+'</div><span class="dest-badge">'+group.type+'</span></div></div>'
-        + '  <div class="card-b">This destination has <b>'+group.count+'</b> numbers.<br/><span class="muted">Use Export CSV in the left card for the full list. “When” affects trace later.</span></div>'
+        + '  <div class="card-b">This destination has <b>'+group.count+'</b> numbers.<br/><span class="muted">Use Export CSV in the left card for the full list.</span></div>'
         + '</div>';
       }
 
@@ -850,10 +947,11 @@ async function loadInventory(){
       var groups=[], viewGroups=[], activeDetail=null;
 
       function renderCard(g){
+        var title = (g.type==='User') ? (g.name && g.name.toLowerCase()!=='user' ? g.name : (g.id ? ('User '+g.id) : 'User')) : g.name || g.type;
         var card = make('div','card'); card.appendChild(make('div','left-bar'));
         var hdr = make('div','card-h');
         var left = make('div','hdr-left');
-        left.appendChild(make('div','card-title', g.name));
+        left.appendChild(make('div','card-title', title));
         left.appendChild(make('span','dest-badge', g.type));
         hdr.appendChild(left);
 
@@ -865,20 +963,13 @@ async function loadInventory(){
 
         var body = make('div','card-b');
         if (activeDetail===g.key) {
-          var preview = make('div','muted','');
-          if (g.type==='User'){ preview.innerHTML='<b>User:</b> top rule <i>Business Hours</i> → AA <b>Main Menu</b>'; }
-          else if (g.type==='Queue'){ preview.innerHTML='<b>Queue:</b> round-robin, timeout 60s → VM <b>Sales VM</b>'; }
-          else if (g.type==='AA'){ preview.innerHTML='<b>AA keys:</b> 1: Sales · 2: Support · timeout: Main VM'; }
-          else { preview.innerHTML='<b>Direct:</b> '+g.type; }
-          body.appendChild(preview);
-
           var acts = make('div','card-actions');
           var exportBtn = make('button','btn','Export CSV');
           exportBtn.onclick = function(){
             var csv='Number,Label\n', i, n, lbl;
             for(i=0;i<g.numbers.length;i++){ n=g.numbers[i]; lbl=(n.label||'').replace(/"/g,'""'); csv+='"'+n.number+'","'+lbl+'"\n'; }
             var blob=new Blob([csv],{type:'text/csv'}), url=URL.createObjectURL(blob), a=document.createElement('a');
-            a.href=url; a.download=(g.type+' '+g.name+' numbers.csv').replace(/\s+/g,'_'); a.click(); setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+            a.href=url; a.download=(g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_'); a.click(); setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
           };
           acts.appendChild(exportBtn);
           body.appendChild(acts);
@@ -926,7 +1017,8 @@ async function loadInventory(){
         viewGroups=[];
         for(i=0;i<groups.length;i++){
           var g=groups[i]; if(type!=='all' && g.type!==type) continue;
-          var match=!term || (g.name && g.name.toLowerCase().indexOf(term)>=0);
+          var title = (g.type==='User') ? (g.name && g.name.toLowerCase()!=='user' ? g.name : (g.id ? ('User '+g.id) : 'User')) : g.name || g.type;
+          var match=!term || (title && title.toLowerCase().indexOf(term)>=0);
           if(!match && /[0-9]/.test(term)){
             for(var j=0;j<g.numbers.length;j++){ if(g.numbers[j].number.toLowerCase().indexOf(term)>=0){ match=true; break; } }
           }
@@ -935,9 +1027,7 @@ async function loadInventory(){
         renderGroups();
       }
 
-      // state + boot
-      var groups=[], viewGroups=[], activeDetail=null;
-
+      // ---------- wire UI ----------
       document.getElementById('ir-q').addEventListener('input', function(){ activeDetail=null; applyFilters(); });
       var chips = root.querySelectorAll('.chip');
       for(var i=0;i<chips.length;i++){
@@ -950,35 +1040,37 @@ async function loadInventory(){
         document.getElementById('ir-dt').style.display = this.value==='custom' ? '' : 'none';
       });
 
-      // NOTE: detailEl was missing in your last paste; restored here
+      // ---------- boot ----------
       var detailEl = document.getElementById('ir-detail');
       detailEl.innerHTML='Loading inventory…';
-loadInventory().then(async function(rows){
-  groups = groupByDestination(rows || []);
 
-  // try to resolve real User names (non-fatal if users endpoint isn’t available)
-  try {
-    const dir = await loadUserDirectory();
-    groups.forEach(g => { if (g.type === 'User') g.name = nameForUserGroup(g, dir); });
-  } catch(e){
-    console.warn('[Intelli] user names not resolved:', e && e.message ? e.message : e);
-  }
+      loadInventory().then(async function(rows){
+        groups = groupByDestination(rows || []);
 
-  applyFilters();
-  detailEl.className='muted';
-  detailEl.innerHTML='Expand a destination on the left to view numbers and previews.';
-}).catch(function(err){
-  console.error('[Intelli] inventory error:', err);
-  detailEl.className='';
-  detailEl.innerHTML =
-    '<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
-    + '<div style="font-weight:600; margin-bottom:6px;">Could not load phone number inventory</div>'
-    + '<div style="margin-bottom:6px;">' + (err && err.message ? err.message : err) + '</div>'
-    + '<div style="font-size:12px;">If you know the endpoint, run in console:<br>'
-    + '<code>window.cvIntelliNumbersUrl = "/exact/path/here";</code> and/or '
-    + '<code>window.cvIntelliUsersUrl = "/users/path/here";</code><br>then click the Intelli Routing tile again.</div>'
-    + '</div>';
-});
+        // Resolve user names (best-effort, non-fatal)
+        try {
+          const dir = await loadUserDirectory();
+          groups.forEach(g => { if (g.type === 'User') g.name = nameForUserGroup(g, dir); });
+        } catch(e){
+          console.warn('[Intelli] user names not resolved:', e && e.message ? e.message : e);
+          groups.forEach(g => { if (g.type === 'User') g.name = nameForUserGroup(g, null); });
+        }
+
+        applyFilters();
+        detailEl.className='muted';
+        detailEl.innerHTML='Expand a destination on the left to view numbers and previews.';
+      }).catch(function(err){
+        console.error('[Intelli] inventory error:', err);
+        detailEl.className='';
+        detailEl.innerHTML =
+          '<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
+          + '<div style="font-weight:600; margin-bottom:6px;">Could not load phone number inventory</div>'
+          + '<div style="margin-bottom:6px;">' + (err && err.message ? err.message : err) + '</div>'
+          + '<div style="font-size:12px;">If you know the endpoints, set in console:<br>'
+          + '<code>window.cvIntelliNumbersUrl = "/exact/numbers/path";</code><br>'
+          + '<code>window.cvIntelliUsersUrl   = "/exact/users/path";</code><br>then click the tile again.</div>'
+          + '</div>';
+      });
 
     } catch(e){
       try { root.innerHTML = '<div style="color:#a00">Mount error: '+(e && e.message ? e.message : e)+'</div>'; } catch(_) {}
@@ -986,59 +1078,3 @@ loadInventory().then(async function(rows){
     }
   };
 })();
-
-// ===== User directory (names) — auto-detect endpoint (override with window.cvIntelliUsersUrl) =====
-var USERS_URL = window.cvIntelliUsersUrl || null;
-
-async function probeUsersUrl(){
-  if (USERS_URL) return USERS_URL;
-  const candidates = [
-    '/portal/api/users',
-    '/portal/api/v1/users',
-    '/portal/ajax/users',
-    '/portal/ajax/user/list',
-    '/api/users',
-    '/ns-api/users'
-  ];
-  for (let i = 0; i < candidates.length; i++){
-    try {
-      const test = addParam(candidates[i], 'limit', '1');
-      const data = await fetchJSON(test);
-      const list = Array.isArray(data) ? data : (data.items || data.results || data.data || data.users);
-      if (Array.isArray(list)) { console.log('[Intelli] users endpoint:', candidates[i]); USERS_URL = candidates[i]; return USERS_URL; }
-    } catch(_) {}
-  }
-  throw new Error('No users endpoint responded with JSON. Set window.cvIntelliUsersUrl manually.');
-}
-
-function mkUserDisplay(u){
-  const ext   = String(u.ext || u.extension || u.exten || u.login || u.username || '').trim();
-  const first = (u.first_name || u.first || '').trim();
-  const last  = (u.last_name  || u.last  || '').trim();
-  const base  = (u.display_name || u.full_name || u.name || ((first||last) ? (first+' '+last).trim() : '') || '').trim();
-  const id    = String(u.id || u.user_id || u.uuid || u.uid || ext).trim();
-  const label = base || ('User ' + (ext || id));
-  return { id, ext, label: ext ? (label + ' ('+ext+')') : label };
-}
-
-async function loadUserDirectory(){
-  const url  = await probeUsersUrl();
-  const raw  = await fetchJSON(addParam(url, 'limit', '5000'));
-  const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.users || []);
-  const byId = Object.create(null), byExt = Object.create(null);
-  list.forEach(u => {
-    const d = mkUserDisplay(u);
-    if (!d) return;
-    if (d.id)  byId[d.id]  = d.label;
-    if (d.ext) byExt[d.ext] = d.label;
-  });
-  return { byId, byExt };
-}
-
-function nameForUserGroup(g, dir){
-  const id = (g.id || '').replace(/^u-/, '');
-  if (dir.byId[id]) return dir.byId[id];
-  if (/^\d{2,6}$/.test(id) && dir.byExt[id]) return dir.byExt[id];
-  return g.name || 'User';
-}
-// ===== /User directory =====
