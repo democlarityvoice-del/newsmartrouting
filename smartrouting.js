@@ -818,32 +818,46 @@
   }
 
   /* ===================== GROUPING (first-hop, stable keys) ===================== */
-  function groupByDestination(rows){
-    var map = Object.create(null), out = [];
-    for (var i=0;i<rows.length;i++){
-      var r = rows[i];
-      var type = r.destType || 'External';
-      var id   = _norm(r.destId);
-      var name = _norm(r.destName);
-      // Build a stable key: prefer id for User/AA/Queue; else name
-      var keyPart = (id ? ('id:'+id) : ('name:'+_normKey(name)));
-      var key = type + '|' + keyPart;
+ function groupByDestination(rows){
+  var map = Object.create(null), out = [];
+  for (var i=0;i<rows.length;i++){
+    var r = rows[i];
+    var type = r.destType || 'External';
+    var id   = _norm(r.destId);
+    var name = _norm(r.destName);
 
-      if (!map[key]) {
-        map[key] = {
-          key: key,
-          type: type,
-          id: id,
-          name: name,
-          numbers: []
-        };
-      }
-      map[key].numbers.push({ id:r.id, number:r.number, label:r.label||'' });
+    // Stable key: for Users, always group by destId; otherwise fallback
+    var key;
+    if (type === 'User' && id) {
+      key = type + '|id:' + id;
+    } else {
+      key = type + '|' + (id ? ('id:'+id) : ('name:'+_normKey(name)));
     }
-    for (var k in map){ if (Object.prototype.hasOwnProperty.call(map,k)) { map[k].count = map[k].numbers.length; out.push(map[k]); } }
-    out.sort(function(a,b){ return b.count - a.count || (a.type > b.type ? 1 : -1) || (_normKey(a.name) > _normKey(b.name) ? 1 : -1); });
-    return out;
+
+    if (!map[key]) {
+      map[key] = {
+        key: key,
+        type: type,
+        id: id,
+        name: name,
+        numbers: []
+      };
+    }
+    map[key].numbers.push({ id:r.id, number:r.number, label:r.label||'' });
   }
+
+  for (var k in map){ 
+    if (Object.prototype.hasOwnProperty.call(map,k)) { 
+      map[k].count = map[k].numbers.length; 
+      out.push(map[k]); 
+    } 
+  }
+
+  out.sort(function(a,b){ 
+    return b.count - a.count || (a.type > b.type ? 1 : -1) || (_normKey(a.name) > _normKey(b.name) ? 1 : -1); 
+  });
+  return out;
+}
 
   /* ===================== UI helpers ===================== */
   function ensureStyle(){
