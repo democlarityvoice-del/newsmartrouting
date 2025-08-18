@@ -856,6 +856,45 @@ function titleForGroup(g, userDir){
   });
 }
 
+// === FIX: add missing loadInventory() (API → iframe, with 5-min cache) ===
+async function loadInventory(){
+  // 5-minute in-memory cache
+  if (window.__cvIntelliNumCache && (Date.now() - window.__cvIntelliNumCache.t < 5 * 60 * 1000)) {
+    return window.__cvIntelliNumCache.rows.slice();
+  }
+
+  // 1) Try API endpoints
+  try {
+    var base = await probeNumbersUrl();
+    var raw  = await fetchJSON(addParam(base, 'limit', '5000'));
+    var list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
+    if (!Array.isArray(list)) list = [];
+
+    var rows = list.map(function(x, i){
+      var destType = x.dest_type || x.owner_type || x.type || x.destination_type;
+      var destId   = x.dest_id   || x.owner_id   || x.destination_id || x.owner_ext || x.ext;
+      var destName = x.dest_name || x.owner_name || x.destination_name;
+      return {
+        id:       x.id || x.uuid || ('num'+i),
+        number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
+        label:    '', // ignore Notes/labels here
+        destType: mapDestType(destType),
+        destId:   (destId == null ? '' : String(destId)),
+        destName: destName || mapDestName(x, destType)
+      };
+    });
+
+    window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() };
+    return rows;
+  } catch (apiErr) {
+    console.warn('[Intelli] API numbers failed — falling back to iframe scrape:', apiErr && apiErr.message ? apiErr.message : apiErr);
+  }
+
+  // 2) Fallback: scrape the Inventory page via hidden iframe
+  var scraped = await scrapeInventoryViaIframe();
+  window.__cvIntelliNumCache = { t: Date.now(), rows: scraped.slice() };
+  return scraped;
+}
 
   /* ===================== DATA: USERS DIRECTORY ===================== */
   var USERS_URL = window.cvIntelliUsersUrl || null;
