@@ -533,6 +533,7 @@
   window.cvIntelliOpen = openOverlay;
 })();
 
+
 /* ===================== Intelli Routing — COMPLETE DROP-IN ===================== */
 ;(function(){
   "use strict";
@@ -574,6 +575,23 @@
     if (t==='VM')    return x.vm_name   || x.owner_name || x.name || ('Voicemail ' +(x.owner_id||x.vm_id||'')); 
     return x.route_name || x.trunk_name || x.dest || x.name || 'External';
   }
+
+  // Extract a likely extension from the “Destination” cell text, e.g. "201 (Hannibal Lecter)" → "201", "Test (701)" → "701"
+function extFromDestination(treatment, destText){
+  const s = String(destText || '');
+  // prefer a leading token like "201 " or "201("
+  let m = s.match(/^\s*(\d{2,6})\b/);
+  if (m) return m[1];
+  // otherwise take the first 2–6 digit token inside parentheses or text
+  m = s.match(/\((\d{2,6})\)/) || s.match(/\b(\d{2,6})\b/);
+  return m ? m[1] : '';
+}
+// Title to show on cards: for Users we’ll swap to the directory label later
+function titleForGroup(g, userDir){
+  return (g.type === 'User')
+    ? (userDir && (userDir.byId[g.id] || (/^\d{2,6}$/.test(g.id) && userDir.byExt[g.id])) ) || (g.name || ('User ' + g.id))
+    : (g.name || g.type);
+}
 
   /* ===================== OVERLAY (UI) ===================== */
   function ensureStyle(){
@@ -724,109 +742,120 @@
   }
 
   function scrapeInventoryViaIframe(){
-    return new Promise(function(resolve, reject){
-      try{
-        var frame=document.getElementById('cv-intelli-invframe');
-        if(frame && frame.parentNode) frame.parentNode.removeChild(frame);
-        frame=document.createElement('iframe');
-        frame.id='cv-intelli-invframe';
-        frame.src='/portal/inventory';
-        frame.setAttribute('aria-hidden','true');
-        Object.assign(frame.style, { position:'fixed', left:'-9999px', top:'-9999px', width:'1px', height:'1px', opacity:'0' });
-        document.body.appendChild(frame);
+  return new Promise(function(resolve, reject){
+    try{
+      if (window.__cvIntelliNumCache && (Date.now() - window.__cvIntelliNumCache.t < 5*60*1000)) {
+        return resolve(window.__cvIntelliNumCache.rows.slice());
+      }
 
-        var killed=false, timeout=setTimeout(function(){ cleanup(); reject(new Error('Inventory iframe timed out')); }, 45000);
-        function cleanup(){ if(killed) return; killed=true; clearTimeout(timeout); if(frame && frame.parentNode) frame.parentNode.removeChild(frame); }
+      var frame = document.getElementById('cv-intelli-invframe');
+      if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+      frame = document.createElement('iframe');
+      frame.id = 'cv-intelli-invframe';
+      frame.src = '/portal/inventory';
+      frame.setAttribute('aria-hidden','true');
+      Object.assign(frame.style, { position:'fixed', left:'-9999px', top:'-9999px', width:'1px', height:'1px', opacity:'0' });
+      document.body.appendChild(frame);
 
-        frame.onload=function(){
-          try{
-            var win=frame.contentWindow, doc=win.document, tries=0;
-            (function waitDT(){
-              tries++;
-              var $=win.jQuery||win.$;
-              var table=doc.querySelector('table.dataTable')||doc.querySelector('table');
-              if($ && $.fn && $.fn.dataTable && table) hook($, table);
-              else if(tries<160) setTimeout(waitDT, 250);
-              else { cleanup(); reject(new Error('Inventory table not found')); }
-            })();
+      var killed=false, timeout=setTimeout(function(){ cleanup(); reject(new Error('Inventory iframe timed out')); }, 45000);
+      function cleanup(){ if(killed) return; killed=true; clearTimeout(timeout); if(frame && frame.parentNode) frame.parentNode.removeChild(frame); }
 
-            function hook($, table){
-              var dt = $(table).DataTable ? $(table).DataTable() :
-                       ($(table).dataTable && $(table).dataTable().api ? $(table).dataTable().api() : null);
-              if(!dt){ cleanup(); return reject(new Error('DataTables not active on inventory table')); }
-              try{ dt.page.len(100).draw(false); }catch(_){}
-              var out=[], seen=new Set();
+      frame.onload = function(){
+        try{
+          var win = frame.contentWindow, doc = win.document, tries=0;
 
-              function collectPage(){
-                dt.rows({page:'current'}).every(function(){
-                  var tr=this.node(); var tds=tr && tr.querySelectorAll ? tr.querySelectorAll('td') : [];
-                  if(!tds.length) return;
-                  var num=(tds[0].textContent||'').trim();
-                  var label=(tds[1] && tds[1].textContent || '').trim();
-                  var remainder=''; for(var i=2;i<tds.length;i++){ var t=(tds[i].textContent||'').trim(); if(t) remainder+=(remainder?' | ':'')+t; }
-                  var tnDigits=(num||'').replace(/[^\d]/g,'');
-                  var destTxt=remainder;
-                  var mType=destTxt.match(/\b(User|Queue|Auto Attendant|AA|Voicemail|VM|External)\b/i);
-                  var type=mType ? mType[1] : '';
-                  var destName='', destId='';
-                  if(/^user$/i.test(type)){ var p=parseUserFromText(destTxt, tnDigits); destName=p.name||''; destId=p.id||''; }
-                  else if(type){ destName = destTxt.replace(new RegExp(type,'i'),'').replace(/^\s*[:\-–]\s*/,'').trim(); }
+          (function waitDT(){
+            tries++;
+            var $ = win.jQuery || win.$;
+            var table = doc.querySelector('table.dataTable') || doc.querySelector('table');
+            if ($ && $.fn && $.fn.dataTable && table) hook($, table);
+            else if (tries<160) setTimeout(waitDT, 250);
+            else { cleanup(); reject(new Error('Inventory table not found')); }
+          })();
 
-                  var key=tnDigits; if(!key || seen.has(key)) return; seen.add(key);
+          function readRowCells(tr){
+            var tds = tr && tr.querySelectorAll ? tr.querySelectorAll('td,th') : [];
+            if (tds.length < 3) return null;
+            return {
+              phone: (tds[0].textContent||'').trim(),
+              treatment: (tds[1].textContent||'').trim(),
+              destination: (tds[2].textContent||'').trim()
+              // deliberately ignoring Notes and everything after col 3
+            };
+          }
 
-                  var dType = (type && type.toLowerCase()==='aa') ? 'AA'
-                             : (type ? type.charAt(0).toUpperCase()+type.slice(1).toLowerCase() : 'External');
+          function hook($, table){
+            var dt = $(table).DataTable ? $(table).DataTable() :
+                     ($(table).dataTable && $(table).dataTable().api ? $(table).dataTable().api() : null);
+            if (!dt){ cleanup(); return reject(new Error('DataTables not active on inventory table')); }
 
-                  out.push({
-                    id: 'n'+key.slice(-8),
-                    number: formatTN(num),
-                    label: label,
-                    destType: dType,
-                    destId: String(destId||''),
-                    destName: destName || (dType==='User' && destId ? ('User '+destId) : (dType || 'External'))
+            // ===== FAST PATH: if not server-side, pull all rows in one shot
+            try {
+              var settings = dt.settings()[0];
+              if (settings && !settings.oFeatures.bServerSide) {
+                var data = dt.rows({ search: 'applied' }).nodes().toArray();
+                var rows = [];
+                var seen = new Set();
+                data.forEach(function(tr){
+                  var c = readRowCells(tr); if (!c) return;
+                  var tnDigits = (c.phone||'').replace(/[^\d]/g,''); if (!tnDigits || seen.has(tnDigits)) return; seen.add(tnDigits);
+                  var type = mapDestType(c.treatment);
+                  var id   = (type==='User' || type==='AA') ? extFromDestination(type, c.destination) : '';
+                  rows.push({
+                    id:       'n'+tnDigits.slice(-8),
+                    number:   formatTN(c.phone),
+                    label:    '',                           // label/notes not used
+                    destType: type,
+                    destId:   String(id || ''),
+                    destName: c.destination || ''
                   });
                 });
+                cleanup();
+                window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() };
+                return resolve(rows);
               }
+            } catch(_) { /* fall through to pager */ }
 
-              $(table).on('draw.dt', function(){
-                collectPage();
-                var info=dt.page.info();
-                if(info.page < info.pages-1) dt.page('next').draw(false);
-                else { cleanup(); resolve(out); }
+            // ===== FALLBACK: paginate through pages quickly
+            try{ dt.page.len(200).draw(false); }catch(_){}
+            var out=[], seen=new Set();
+
+            function collectPage(){
+              dt.rows({ page:'current' }).every(function(){
+                var c = readRowCells(this.node()); if (!c) return;
+                var tnDigits = (c.phone||'').replace(/[^\d]/g,''); if (!tnDigits || seen.has(tnDigits)) return; seen.add(tnDigits);
+                var type = mapDestType(c.treatment);
+                var id   = (type==='User' || type==='AA') ? extFromDestination(type, c.destination) : '';
+                out.push({
+                  id:       'n'+tnDigits.slice(-8),
+                  number:   formatTN(c.phone),
+                  label:    '',
+                  destType: type,
+                  destId:   String(id || ''),
+                  destName: c.destination || ''
+                });
               });
-
-              collectPage(); dt.draw(false);
             }
-          }catch(e){ cleanup(); reject(e); }
-        };
-      }catch(ex){ reject(ex); }
-    });
-  }
 
-  async function loadInventory(){
-    try {
-      var base = await probeNumbersUrl();
-      var raw  = await fetchJSON(addParam(base, 'limit', '5000'));
-      var list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
-      if (!Array.isArray(list) || !list.length) throw new Error('Endpoint returned no items: '+base);
-      return list.map(function(x,i){
-        var destType = x.dest_type || x.owner_type || x.type || x.destination_type;
-        var destId   = x.dest_id   || x.owner_id   || x.destination_id || x.owner_ext || x.ext;
-        var destName = x.dest_name || x.owner_name || x.destination_name;
-        return {
-          id:       x.id || x.uuid || ('num'+i),
-          number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
-          label:    x.label || x.alias || x.description || x.name || '',
-          destType: mapDestType(destType),
-          destId:   (destId==null ? '' : String(destId)),
-          destName: destName || mapDestName(x, destType)
-        };
-      });
-    } catch(apiErr){
-      log('API numbers failed — falling back to iframe scrape:', apiErr && apiErr.message ? apiErr.message : apiErr);
-      return await scrapeInventoryViaIframe();
-    }
-  }
+            $(table).on('draw.dt', function(){
+              collectPage();
+              var info = dt.page.info();
+              if (info.page < info.pages - 1) dt.page('next').draw(false);
+              else {
+                cleanup();
+                window.__cvIntelliNumCache = { t: Date.now(), rows: out.slice() };
+                resolve(out);
+              }
+            });
+
+            collectPage(); dt.draw(false);
+          }
+        }catch(e){ cleanup(); reject(e); }
+      };
+    }catch(ex){ reject(ex); }
+  });
+}
+
 
   /* ===================== DATA: USERS DIRECTORY ===================== */
   var USERS_URL = window.cvIntelliUsersUrl || null;
