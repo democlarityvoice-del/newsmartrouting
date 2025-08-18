@@ -556,27 +556,24 @@
 
   /* ===================== GROUPING ===================== */
   function groupByDestination(rows){
-    var groups = {};
-    rows.forEach(function(r){
-      var key = (r.type||'') + '::' + (r.name||r.id||'');
-      if(!groups[key]){
-        groups[key] = {
-          key: key,
-          id: r.id,
-          type: r.type,
-          name: r.name,
-          numbers: [],
-          count: 0
-        };
-      }
-      groups[key].numbers.push({
-        number: r.number,
-        label: r.label||''
-      });
-      groups[key].count++;
-    });
-    return Object.values(groups);
-  }
+  var groups = {};
+  rows.forEach(function(r){
+    if(!r.id) return; // skip bad rows
+    var key = r.type + "::" + r.id;
+    if(!groups[key]){
+      groups[key] = {
+        key: key,
+        id: r.id,
+        type: r.type,
+        name: r.name,
+        numbers: []
+      };
+    }
+    groups[key].numbers.push({ number: r.number, label: r.label||'' });
+  });
+  return Object.values(groups);
+}
+
 
   /* ===================== MOUNT APP ===================== */
   function cvIntelliRoutingMount(root){
@@ -712,28 +709,29 @@
       var detailEl=document.getElementById('ir-detail');
       detailEl.innerHTML='Loading inventory…';
       loadInventory().then(async function(rows){
-        groups = groupByDestination(rows||[]);
-        try { window.__cvUserDir = await loadUserDirectory(); } catch(e){ log('user names not resolved:', e && e.message ? e.message : e); }
-        applyFilters();
-        detailEl.className='muted';
-        detailEl.innerHTML='Expand a destination on the left to view numbers and previews.';
-      }).catch(function(err){
-        console.error('[Intelli] inventory error:', err);
-        detailEl.className='';
-        detailEl.innerHTML =
-          '<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
-          + '<div style="font-weight:600; margin-bottom:6px;">Could not load phone number inventory</div>'
-          + '<div style="margin-bottom:6px;">' + (err && err.message ? err.message : err) + '</div>'
-          + '<div style="font-size:12px;">If you know the endpoints, set in console:<br>'
-          + '<code>window.cvIntelliNumbersUrl = "/exact/numbers/path";</code><br>'
-          + '<code>window.cvIntelliUsersUrl   = "/exact/users/path";</code><br>then click the tile again.</div>'
-          + '</div>';
-      });
-    }catch(e){
-      try{ root.innerHTML='<div style="color:#a00">Mount error: '+(e && e.message ? e.message : e)+'</div>'; }catch(_){}
-      console.error(e);
-    }
+  // 🔎 Log what API returned
+        console.log("Inventory rows:", rows);
+
+  // ✅ Group by destination (using destination.id/type/name)
+  groups = groupByDestination(rows.map(function(r){
+    return {
+      id:   r.destination && r.destination.id,
+      type: r.destination && r.destination.type,
+      name: r.destination && r.destination.name,
+      number: r.number,
+      label: r.label
+    };
+  }) || []);
+
+  try { 
+    window.__cvUserDir = await loadUserDirectory(); 
+  } catch(e){ 
+    log('user names not resolved:', e && e.message ? e.message : e); 
   }
+  applyFilters();
+  detailEl.className='muted';
+  detailEl.innerHTML='Expand a destination on the left to view numbers and previews.';
+})
 
   function openOverlay(){
     var root = ensureRoot();
