@@ -612,36 +612,90 @@
   function getGroupTitle(g) { return (g && (g.name || g.id || (g.type || ''))).toString(); }
 
   /* ===================== Data loaders (safe defaults) ===================== */
-  async function loadInventory() {
-    // prefer user-provided loader if present
-    if (typeof window.cvIntelliLoadInventory === 'function') {
-      try { return await window.cvIntelliLoadInventory(); } catch (e) { log('cvIntelli: user loader failed', e); }
+  /* ===================== Data loaders (safe defaults) ===================== */
+
+  // normalize a single raw row into { id, type, name, number, label }
+  function normalizeRow(r) {
+    if (!r || typeof r !== 'object') {
+      // if it's a primitive (string/number), treat as a number-only External row
+      return { id: r ? String(r) : null, type: 'External', name: '', number: String(r || ''), label: '' };
     }
-    // fallback to fetch from standard endpoint
+    var id = (r.destination && (r.destination.id || r.destinationId))
+          || r.destinationId || r.destId || r.id || r.groupId || r.destination_id || null;
+
+    if (id !== null && id !== undefined) id = String(id);
+
+    var type = (r.destination && r.destination.type)
+          || r.type || r.destinationType || r.destType || r.kind || (r.number ? 'External' : 'Unknown');
+
+    var name = (r.destination && r.destination.name)
+          || r.name || r.destName || r.displayName || '';
+
+    var number = r.number || r.phone || r.digits || r.value || r.phone_number || '';
+    if (number === null || number === undefined) number = '';
+    number = String(number || '');
+
+    var label = r.label || r.labelName || r.description || r.note || '';
+
+    // If we were given only a number and no id, generate a stable-ish id so groups still appear
+    if (!id) {
+      if (number) id = 'ext:' + number;
+      else id = 'unknown:' + Math.random().toString(36).slice(2, 7);
+    }
+
+    return { id: id, type: String(type || 'External'), name: String(name || ''), number: number, label: String(label || '') };
+  }
+
+  // robust loader: accepts {rows:[]}, {data:[]}, array, keyed objects, or primitive arrays
+  async function loadInventory() {
+    if (typeof window.cvIntelliLoadInventory === 'function') {
+      try { return await window.cvIntelliLoadInventory(); } catch (e) { log('cvIntelli: custom loader failed', e); }
+    }
     try {
       var res = await fetch(cvIntelliNumbersUrl, { credentials: 'same-origin' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       var body = await res.json();
-      // normalize: expect array of rows - allow body.rows or body
-      return Array.isArray(body) ? body : (Array.isArray(body.rows) ? body.rows : []);
+      var rows = [];
+      if (Array.isArray(body)) rows = body;
+      else if (Array.isArray(body.rows)) rows = body.rows;
+      else if (Array.isArray(body.data)) rows = body.data;
+      else if (Array.isArray(body.numbers)) rows = body.numbers;
+      else if (body && typeof body === 'object') {
+        // handle { id: [..], id2: [..] } shaped responses
+        var keys = Object.keys(body || {});
+        var maybeArrayOfArrays = keys.length && Array.isArray(body[keys[0]]);
+        if (maybeArrayOfArrays) {
+          rows = [];
+          keys.forEach(function (k) {
+            (body[k] || []).forEach(function (entry) {
+              if (!entry.destination && !entry.id) entry.destination = { id: k };
+              rows.push(entry);
+            });
+          });
+        } else {
+          // fallback: flatten simple object values that look like entries
+          rows = keys.map(function (k) { return body[k]; }).filter(Boolean);
+        }
+      }
+      return rows;
     } catch (e) {
-      log('cvIntelli: loadInventory failed, returning []', e && e.message ? e.message : e);
+      log('cvIntelli: loadInventory fail -> []', e && e.message ? e.message : e);
       return [];
     }
   }
 
   async function loadUserDirectory() {
     if (typeof window.cvIntelliLoadUserDirectory === 'function') {
-      try { return await window.cvIntelliLoadUserDirectory(); } catch (e) { log('cvIntelli: user directory loader failed', e); }
+      try { return await window.cvIntelliLoadUserDirectory(); } catch (e) { log('cvIntelli: custom user directory loader failed', e); }
     }
     try {
       var res = await fetch(cvUserDirectoryUrl, { credentials: 'same-origin' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       var body = await res.json();
-      // return object keyed by id for convenience if possible
+      // convert array -> keyed object by id for convenience
       if (Array.isArray(body)) {
         var obj = {};
-        body.forEach(function (u) { if (u && u.id) obj[String(u.id)] = u; });
+        body.forEach(function (u) { if (u && (u.id || u.userId)) obj[String(u.id || u.userId)] = u; });
         return obj;
       }
       if (body && typeof body === 'object') return body;
@@ -652,32 +706,36 @@
     }
   }
 
-  /* ===================== Grouping helper ===================== */
-  function groupByDestination(rows) {
-    var groups = {};
-    (rows || []).forEach(function (r) {
-      if (!r || (!r.id && !r.number)) return;
-      var id = r.id != null ? r.id : (r.destination && r.destination.id);
-      var type = r.type != null ? r.type : (r.destination && r.destination.type) || 'External';
-      var name = r.name != null ? r.name : (r.destination && r.destination.name) || '';
-      var key = String(type) + "::" + String(id);
+/* end of Data loaders (safe defaults) */
+
+
+  /* ===================== Grouping ===================== */
+function groupByDestination(rows) {
+  var groups = {};
+  (rows || []).forEach(function (raw) {
+    try {
+      var r = normalizeRow(raw);
+      if (!r) return;
+      var key = String((r.type || 'External') + '::' + (r.id || ('ext:' + (r.number || ''))));
       if (!groups[key]) {
-        groups[key] = {
-          key: key,
-          id: id,
-          type: type,
-          name: name,
-          numbers: []
-        };
+        groups[key] = { key: key, id: r.id, type: r.type, name: r.name || '', numbers: [] };
       }
-      groups[key].numbers.push({ number: r.number || r.phone || '', label: r.label || '' });
-    });
-    // compute counts for quick UI
-    return Object.keys(groups).map(function (k) {
-      groups[k].count = groups[k].numbers.length;
-      return groups[k];
-    });
-  }
+      // keep group even if no numbers (so destination shows up)
+      if (r.number && r.number.trim()) {
+        groups[key].numbers.push({ number: r.number, label: r.label || '' });
+      }
+    } catch (e) {
+      log('groupByDestination: skip row', e && e.message ? e.message : e);
+    }
+  });
+  // convert to array and attach counts
+  return Object.keys(groups).map(function (k) {
+    var g = groups[k];
+    g.count = g.numbers.length;
+    return g;
+  });
+}
+
 
   /* ===================== Styling + Root overlay ===================== */
   var DEFAULT_ACCENT = '#f89406';
@@ -990,46 +1048,35 @@
         document.getElementById('ir-dt').style.display = this.value === 'custom' ? '' : 'none';
       });
 
+
       // boot
-      var detailEl = document.getElementById('ir-detail');
-      detailEl.innerHTML = 'Loading inventory…';
-      loadInventory().then(async function (rows) {
-        try { log("Inventory rows:", rows); } catch (e) { }
-        // normalize mapping - if API returns objects with destination property, map to expected shape
-        var mapped = (rows || []).map(function (r) {
-          if (!r) return null;
-          return {
-            id: (r.destination && r.destination.id) || r.id || r.destinationId || r.destId,
-            type: (r.destination && r.destination.type) || r.type || r.destinationType || 'External',
-            name: (r.destination && r.destination.name) || r.name || r.destName || '',
-            number: r.number || r.phone || r.digits || '',
-            label: r.label || r.labelName || ''
-          };
-        }).filter(Boolean);
+var detailEl = document.getElementById('ir-detail');
+detailEl.innerHTML = 'Loading inventory…';
 
-        groups = groupByDestination(mapped || []);
+loadInventory().then(async function (rows) {
+  try { log('cvIntelli: raw inventory count:', (rows && rows.length) || 0); } catch (e) {}
+  try { console.log('cvIntelli: sample raw rows', (rows || []).slice(0, 6)); } catch (e) {}
 
-        try {
-          window.__cvUserDir = await loadUserDirectory();
-        } catch (e) {
-          log('user names not resolved:', e && e.message ? e.message : e);
-        }
-        applyFilters();
-        detailEl.className = 'muted';
-        detailEl.innerHTML = 'Expand a destination on the left to view numbers and previews.';
-      }).catch(function (e) {
-        log('inventory load promise rejected', e);
-        detailEl.className = 'muted';
-        detailEl.innerHTML = 'Could not load inventory.';
-      });
+  // normalize rows into expected shape
+  var mapped = (rows || []).map(normalizeRow);
+  try { console.log('cvIntelli: sample normalized', mapped.slice(0, 6)); } catch (e) {}
 
-    } catch (e) {
-      err('cvIntelliRoutingMount error:', e && e.message ? e.message : e);
-    }
-  }
+  // group into destinations (keeps groups even if they have 0 numbers)
+  groups = groupByDestination(mapped || []);
+  try { console.log('cvIntelli: groups count:', groups.length, 'sample groups:', groups.slice(0, 6)); } catch (e) {}
 
-  // expose the mount so external script can boot into our mount point
-  window.cvIntelliRoutingMount = cvIntelliRoutingMount;
+  // attempt to load user directory (optional)
+  try { window.__cvUserDir = await loadUserDirectory(); } catch (e) { log('user names not resolved:', e && e.message ? e.message : e); }
+
+  applyFilters();
+  detailEl.className = 'muted';
+  detailEl.innerHTML = 'Expand a destination on the left to view numbers and previews.';
+}).catch(function (e) {
+  log('cvIntelli: inventory load failed', e && e.message ? e.message : e);
+  detailEl.className = 'muted';
+  detailEl.innerHTML = 'Could not load inventory.';
+});
+
 
   /* ===================== Overlay control (open/close) ===================== */
   function openOverlay() {
