@@ -1007,7 +1007,9 @@
       var groups=[], viewGroups=[], activeDetail=null;
 
       function renderCard(g){
-        var title = (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
+        var title = (g.type === 'User')
+          ? nameForUserGroup(g, window.__cvUserDir||null)
+          : (g.name || g.type);
         var card=make('div','card'); card.appendChild(make('div','left-bar'));
         var hdr=make('div','card-h');
         var left=make('div','hdr-left');
@@ -1069,7 +1071,9 @@
         viewGroups=[];
         for(i=0;i<groups.length;i++){
           var g=groups[i]; if(type!=='all' && g.type!==type) continue;
-          var title = (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
+          var title = (g.type === 'User')
+            ? nameForUserGroup(g, window.__cvUserDir||null)
+            : (g.name || g.type);
           var match=!term || (title && _normKey(title).indexOf(term)>=0);
           if(!match && /[0-9]/.test(term)){
             for(var j=0;j<g.numbers.length;j++){ if(_normKey(g.numbers[j].number).indexOf(term)>=0){ match=true; break; } }
