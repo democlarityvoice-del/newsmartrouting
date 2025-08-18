@@ -529,13 +529,9 @@
     }
   }
 
-  // idempotent exposure + listener: prevents duplicate registrations
-if (!window.__cvIntelliOpenRegistered) {
-  window.cvIntelliOpen = openOverlay; // expose API once
   window.addEventListener('cv:intelli-routing:open', openOverlay, false);
-  window.__cvIntelliOpenRegistered = true;
-}
-
+  window.cvIntelliOpen = openOverlay;
+})();
 
 
 /* ===================== Intelli Routing — COMPLETE DROP-IN ===================== */
@@ -1113,14 +1109,10 @@ if (!window.__cvIntelliOpenRegistered) {
     var mount = document.getElementById('cv-intelli-mount');
     cvIntelliRoutingMount(mount);
   }
-  // idempotent exposure + listener: prevents duplicate registrations
-if (!window.__cvIntelliOpenRegistered) {
-  window.cvIntelliOpen = openOverlay; // expose API once
-  window.addEventListener('cv:intelli-routing:open', openOverlay, false);
-  window.__cvIntelliOpenRegistered = true;
-}
+  window.cvIntelliOpen = openOverlay; // expose
 
-  
+  // Also listen for legacy event
+  window.addEventListener('cv:intelli-routing:open', openOverlay, false);
 
   /* ===================== NAV BUTTON (robust) ===================== */
   (function insertNavButton(){
