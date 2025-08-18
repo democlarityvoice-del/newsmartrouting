@@ -536,6 +536,12 @@
 
 /* ===================== Intelli Routing — COMPLETE DROP-IN ===================== */
 (function(){
+
+// === Intelli Routing Globals ===
+var cvIntelliNumbersUrl = cvBaseUrl + "/portal/ir/numbers";
+var cvUserDirectoryUrl  = cvBaseUrl + "/portal/ir/users";
+
+  
   /* ===================== HELPERS ===================== */
   function log(){ try{ console.log.apply(console, arguments); }catch(e){} }
   function make(tag, cls, txt){
