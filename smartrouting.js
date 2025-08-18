@@ -534,11 +534,53 @@
 })();
 
 /* ===== Smart Routing+ — Group by Destination (Portal-safe, vanilla JS) ===== */
-;(function(){
-  // expose mount on window
-  window.cvIntelliRoutingMount = function(root){
-    try {
-      root.innerHTML = '';
+function groupByDestination(rows){
+  var map={}, out=[];
+  for (var i=0;i<rows.length;i++){
+    var r = rows[i];
+    var type = r.destType || 'External';
+
+    var key;
+    if (type === 'User'){
+      var nm = (r.destName || '').trim();
+      var id = (r.destId   || '').trim();
+
+      // NEVER group on the generic "User" label
+      var userKey = id || (nm && nm.toLowerCase() !== 'user' ? nm : ('unknown-' + (r.id || i)));
+
+      key = 'User:' + userKey;
+      if (!map[key]) map[key] = {
+        key   : key,
+        type  : 'User',
+        id    : userKey,                    // keep extension if we have it
+        name  : (nm && nm.toLowerCase()!=='user') ? nm : '',
+        numbers: []
+      };
+    } else {
+      var nonUserKey = type + ':' + (r.destId || r.destName || '');
+      if (!map[nonUserKey]) map[nonUserKey] = {
+        key: nonUserKey,
+        type: type,
+        id: String(r.destId || ''),
+        name: r.destName || '',
+        numbers: []
+      };
+      key = nonUserKey;
+    }
+
+    map[key].numbers.push({ id:r.id, number:r.number, label:r.label||'' });
+  }
+
+  for (var k in map){
+    if (map.hasOwnProperty(k)){
+      map[k].count = map[k].numbers.length;
+      out.push(map[k]);
+    }
+  }
+  out.sort(function(a,b){ return b.count - a.count || (a.type > b.type ? 1 : -1); });
+  return out;
+}
+
 
       // ---- tiny DOM helper ----
       function make(tag, cls, html){ var el=document.createElement(tag); if(cls) el.className=cls; if(html!=null) el.innerHTML=html; return el; }
@@ -617,104 +659,145 @@
 
       // ---- iframe scrape of Inventory (DataTables with pagination) ----
       function scrapeInventoryViaIframe(){
-        return new Promise(function(resolve, reject){
-          try{
-            var frame = document.getElementById('cv-intelli-invframe');
-            if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
-            frame = document.createElement('iframe');
-            frame.id = 'cv-intelli-invframe';
-            frame.src = '/portal/inventory';
-            frame.setAttribute('aria-hidden','true');
-            frame.style.position='fixed'; frame.style.left='-9999px'; frame.style.top='-9999px';
-            frame.style.width='1px'; frame.style.height='1px'; frame.style.opacity='0';
-            document.body.appendChild(frame);
+  return new Promise(function(resolve, reject){
+    try{
+      var frame = document.getElementById('cv-intelli-invframe');
+      if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+      frame = document.createElement('iframe');
+      frame.id = 'cv-intelli-invframe';
+      frame.src = '/portal/inventory';
+      frame.setAttribute('aria-hidden','true');
+      frame.style.position='fixed'; frame.style.left='-9999px'; frame.style.top='-9999px';
+      frame.style.width='1px'; frame.style.height='1px'; frame.style.opacity='0';
+      document.body.appendChild(frame);
 
-            var killed=false, timeout=setTimeout(function(){ cleanup(); reject(new Error('Inventory iframe timed out')); }, 45000);
-            function cleanup(){ if (killed) return; killed=true; clearTimeout(timeout); if (frame && frame.parentNode) frame.parentNode.removeChild(frame); }
+      var killed=false, timeout=setTimeout(function(){ cleanup(); reject(new Error('Inventory iframe timed out')); }, 45000);
+      function cleanup(){ if (killed) return; killed=true; clearTimeout(timeout); if (frame && frame.parentNode) frame.parentNode.removeChild(frame); }
 
-            frame.onload = function(){
-              try{
-                var win = frame.contentWindow, doc = win.document, tries=0;
-                (function waitDT(){
-                  tries++;
-                  var $ = win.jQuery || win.$;
-                  var table = doc.querySelector('table.dataTable') || doc.querySelector('table');
-                  if ($ && $.fn && $.fn.dataTable && table) hook($, table);
-                  else if (tries<160) setTimeout(waitDT, 250);
-                  else { cleanup(); reject(new Error('Inventory table not found')); }
-                })();
+      frame.onload = function(){
+        try{
+          var win = frame.contentWindow, doc = win.document, tries=0;
 
-                function hook($, table){
-                  var dt = $(table).DataTable ? $(table).DataTable() :
-                           ($(table).dataTable && $(table).dataTable().api ? $(table).dataTable().api() : null);
-                  if (!dt){ cleanup(); return reject(new Error('DataTables not active on inventory table')); }
+          function findExtCandidate(text, tnDigits){
+            text = (text||'').replace(/\s+/g,' ').trim();
+            // explicit forms first: (301), ext 301, x301, #301
+            let m = text.match(/\((\d{2,6})\)/);               if (m) return m[1];
+            m = text.match(/\b(?:ext(?:ension)?\.?|x|#)\s*(\d{2,6})\b/i); if (m) return m[1];
+            // fallback: any 3-6 digit token that isn’t part of the TN
+            let rx = /\b(\d{3,6})\b/g, cand;
+            while ((m = rx.exec(text)) !== null){
+              cand = m[1];
+              if (tnDigits.indexOf(cand) === -1) return cand;
+            }
+            return '';
+          }
 
-                  try{ dt.page.len(100).draw(false); }catch(_){}
-                  var out=[], seen=new Set();
+          function parseUserFromText(txt, tnDigits){
+            txt = (txt||'').replace(/\s+/g,' ').trim();
+            // User: Pat Jones (301)
+            let m = txt.match(/user\s*[:\-–]?\s*([^()#|]+?)\s*(?:\((\d{2,6})\)|\b(?:ext(?:ension)?\.?|x|#)\s*(\d{2,6}))?/i);
+            if (m) return { name:(m[1]||'').trim(), id:(m[2]||m[3]||'').trim() };
 
-                  function parseUserExt(s1, s2){
-                    var hay = ((s1||'') + ' ' + (s2||'')).replace(/\s+/g,' ');
-                    var m = hay.match(/\b(?:ext(?:ension)?\.?|x|#)?\s*(\d{2,6})\b/i);
-                    return m ? m[1] : '';
-                  }
+            // Pat Jones (301)
+            m = txt.match(/([^()#|]+?)\s*\((\d{2,6})\)/);
+            if (m) return { name:(m[1]||'').trim(), id:(m[2]||'').trim() };
 
-                  function collectPage(){
-                    dt.rows({page:'current'}).every(function(){
-                      var tr = this.node();
-                      var tds = tr && tr.querySelectorAll ? tr.querySelectorAll('td') : [];
-                      var num='', label='', type='', name='';
-                      if (tds.length){
-                        num   = (tds[0].textContent||'').trim();
-                        label = (tds[1] && tds[1].textContent || '').trim();
-                        for (var i=2;i<tds.length;i++){
-                          var t=(tds[i].textContent||'').trim();
-                          var m=t.match(/(User|Queue|Auto Attendant|AA|Voicemail|VM|External)/i);
-                          if(m){ type=m[1]; name=t.replace(m[0],'').replace(/^\s*[:\-–]\s*/,'').trim(); break; }
-                        }
-                      }
-                      var key = (num || '').replace(/[^\d]/g,'');
-                      if (!key || seen.has(key)) return;
-                      seen.add(key);
+            // name + “ext 301” somewhere
+            m = txt.match(/([^|#()]+?)\b(?:ext(?:ension)?\.?|x|#)\s*(\d{2,6})\b/i);
+            if (m) return { name:(m[1]||'').trim(), id:(m[2]||'').trim() };
 
-                      var dType = mapDestType(type || 'External');
-                      var dId   = '';
-                      var dName = name || '';
+            // last resort: try to extract a standalone extension not in the TN
+            const id = findExtCandidate(txt, tnDigits);
+            return { name:'', id };
+          }
 
-                      if (dType === 'User'){
-                        dId = parseUserExt(name, label);
-                        if (!dId && dName) dId = 'u-'+dName.toLowerCase().replace(/[^\w]+/g,'-');
-                      }
+          (function waitDT(){
+            tries++;
+            var $ = win.jQuery || win.$;
+            var table = doc.querySelector('table.dataTable') || doc.querySelector('table');
+            if ($ && $.fn && $.fn.dataTable && table) hook($, table);
+            else if (tries<160) setTimeout(waitDT, 250);
+            else { cleanup(); reject(new Error('Inventory table not found')); }
+          })();
 
-                      out.push({
-                        id:       'n'+key.slice(-8),
-                        number:   formatTN(num),
-                        label:    label,
-                        destType: dType,
-                        destId:   String(dId || ''),
-                        destName: dName || (dType==='User' && dId ? ('User '+dId) : (dType || 'External'))
-                      });
-                    });
-                  }
+          function hook($, table){
+            var dt = $(table).DataTable ? $(table).DataTable() :
+                     ($(table).dataTable && $(table).dataTable().api ? $(table).dataTable().api() : null);
+            if (!dt){ cleanup(); return reject(new Error('DataTables not active on inventory table')); }
 
-                  $(table).on('draw.dt', function(){
-                    collectPage();
-                    var info = dt.page.info();
-                    if (info.page < info.pages - 1){
-                      dt.page('next').draw(false);
-                    } else {
-                      cleanup();
-                      resolve(out);
-                    }
-                  });
+            try{ dt.page.len(100).draw(false); }catch(_){}
+            var out=[], seen=new Set();
 
-                  collectPage();
-                  dt.draw(false);
+            function collectPage(){
+              dt.rows({page:'current'}).every(function(){
+                var tr  = this.node();
+                var tds = tr && tr.querySelectorAll ? tr.querySelectorAll('td') : [];
+                if (!tds.length) return;
+
+                var num   = (tds[0].textContent||'').trim();
+                var label = (tds[1] && tds[1].textContent || '').trim();
+
+                // MANY portals vary — grab entire row text beyond number/label
+                var remainder = '';
+                for (var i=2;i<tds.length;i++){
+                  var t=(tds[i].textContent||'').trim();
+                  if (t) remainder += (remainder ? ' | ' : '') + t;
                 }
-              }catch(e){ cleanup(); reject(e); }
-            };
-          }catch(ex){ reject(ex); }
-        });
-      }
+
+                var tnDigits = (num || '').replace(/[^\d]/g,'');
+                var destTxt  = remainder;
+
+                // figure out type
+                var mType = destTxt.match(/\b(User|Queue|Auto Attendant|AA|Voicemail|VM|External)\b/i);
+                var type = mType ? mType[1] : '';
+
+                var destName='', destId='';
+                if (/^user$/i.test(type)){
+                  var p = parseUserFromText(destTxt, tnDigits);
+                  destName = p.name || '';
+                  destId   = p.id   || '';
+                } else if (type){
+                  destName = destTxt.replace(new RegExp(type,'i'),'').replace(/^\s*[:\-–]\s*/,'').trim();
+                }
+
+                var key = tnDigits;
+                if (!key || seen.has(key)) return;
+                seen.add(key);
+
+                var dType = (type && type.toLowerCase()==='aa') ? 'AA'
+                           : (type ? type.charAt(0).toUpperCase()+type.slice(1).toLowerCase() : 'External');
+
+                out.push({
+                  id:       'n'+key.slice(-8),
+                  number:   formatTN(num),
+                  label:    label,
+                  destType: dType,
+                  destId:   String(destId || ''),
+                  destName: destName || (dType==='User' && destId ? ('User '+destId) : (dType || 'External'))
+                });
+              });
+            }
+
+            $(table).on('draw.dt', function(){
+              collectPage();
+              var info = dt.page.info();
+              if (info.page < info.pages - 1){
+                dt.page('next').draw(false);
+              } else {
+                cleanup();
+                resolve(out);
+              }
+            });
+
+            collectPage();
+            dt.draw(false);
+          }
+        }catch(e){ cleanup(); reject(e); }
+      };
+    }catch(ex){ reject(ex); }
+  });
+}
+
 
       // ---- main numbers loader (API → fallback iframe) ----
       async function loadInventory(){
