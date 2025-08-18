@@ -1157,3 +1157,26 @@
   })();
 
 })();
+
+// Intelli Routing HOTFIX: bridge the event to the correct opener + fix tile click
+(function () {
+  try {
+    if (window.__cvIntelliFixApplied) return;
+    window.__cvIntelliFixApplied = true;
+
+    // Whenever the old event fires, call the real opener
+    window.addEventListener('cv:intelli-routing:open', function () {
+      if (typeof window.cvIntelliOpen === 'function') window.cvIntelliOpen();
+    }, false);
+
+    // Make sure the nav tile always launches the correct opener
+    document.addEventListener('click', function (e) {
+      var a = e.target && e.target.closest && e.target.closest('#nav-intelli-routing a, #nav-intelli-routing-link');
+      if (!a) return;
+      e.preventDefault();
+      if (typeof window.cvIntelliOpen === 'function') window.cvIntelliOpen();
+    }, true);
+  } catch (e) {
+    console.error('[Intelli HOTFIX] ', e);
+  }
+})();
