@@ -953,25 +953,92 @@ async function loadInventory(){
       // NOTE: detailEl was missing in your last paste; restored here
       var detailEl = document.getElementById('ir-detail');
       detailEl.innerHTML='Loading inventory…';
-      loadInventory().then(function(rows){
-        groups = groupByDestination(rows||[]);
-        applyFilters();
-        detailEl.className='muted';
-        detailEl.innerHTML='Expand a destination on the left to view numbers and previews.';
-      }).catch(function(err){
-        console.error('[Intelli] inventory error:', err);
-        detailEl.className='';
-        detailEl.innerHTML =
-          '<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
-          + '<div style="font-weight:600; margin-bottom:6px;">Could not load phone number inventory</div>'
-          + '<div style="margin-bottom:6px;">' + (err && err.message ? err.message : err) + '</div>'
-          + '<div style="font-size:12px;">If you know the endpoint, run in console:<br>'
-          + '<code>window.cvIntelliNumbersUrl = "/exact/path/here";</code><br>then click the Intelli Routing tile again.</div>'
-          + '</div>';
-      });
+loadInventory().then(async function(rows){
+  groups = groupByDestination(rows || []);
+
+  // try to resolve real User names (non-fatal if users endpoint isn’t available)
+  try {
+    const dir = await loadUserDirectory();
+    groups.forEach(g => { if (g.type === 'User') g.name = nameForUserGroup(g, dir); });
+  } catch(e){
+    console.warn('[Intelli] user names not resolved:', e && e.message ? e.message : e);
+  }
+
+  applyFilters();
+  detailEl.className='muted';
+  detailEl.innerHTML='Expand a destination on the left to view numbers and previews.';
+}).catch(function(err){
+  console.error('[Intelli] inventory error:', err);
+  detailEl.className='';
+  detailEl.innerHTML =
+    '<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
+    + '<div style="font-weight:600; margin-bottom:6px;">Could not load phone number inventory</div>'
+    + '<div style="margin-bottom:6px;">' + (err && err.message ? err.message : err) + '</div>'
+    + '<div style="font-size:12px;">If you know the endpoint, run in console:<br>'
+    + '<code>window.cvIntelliNumbersUrl = "/exact/path/here";</code> and/or '
+    + '<code>window.cvIntelliUsersUrl = "/users/path/here";</code><br>then click the Intelli Routing tile again.</div>'
+    + '</div>';
+});
+
     } catch(e){
       try { root.innerHTML = '<div style="color:#a00">Mount error: '+(e && e.message ? e.message : e)+'</div>'; } catch(_) {}
       console.error(e);
     }
   };
 })();
+
+// ===== User directory (names) — auto-detect endpoint (override with window.cvIntelliUsersUrl) =====
+var USERS_URL = window.cvIntelliUsersUrl || null;
+
+async function probeUsersUrl(){
+  if (USERS_URL) return USERS_URL;
+  const candidates = [
+    '/portal/api/users',
+    '/portal/api/v1/users',
+    '/portal/ajax/users',
+    '/portal/ajax/user/list',
+    '/api/users',
+    '/ns-api/users'
+  ];
+  for (let i = 0; i < candidates.length; i++){
+    try {
+      const test = addParam(candidates[i], 'limit', '1');
+      const data = await fetchJSON(test);
+      const list = Array.isArray(data) ? data : (data.items || data.results || data.data || data.users);
+      if (Array.isArray(list)) { console.log('[Intelli] users endpoint:', candidates[i]); USERS_URL = candidates[i]; return USERS_URL; }
+    } catch(_) {}
+  }
+  throw new Error('No users endpoint responded with JSON. Set window.cvIntelliUsersUrl manually.');
+}
+
+function mkUserDisplay(u){
+  const ext   = String(u.ext || u.extension || u.exten || u.login || u.username || '').trim();
+  const first = (u.first_name || u.first || '').trim();
+  const last  = (u.last_name  || u.last  || '').trim();
+  const base  = (u.display_name || u.full_name || u.name || ((first||last) ? (first+' '+last).trim() : '') || '').trim();
+  const id    = String(u.id || u.user_id || u.uuid || u.uid || ext).trim();
+  const label = base || ('User ' + (ext || id));
+  return { id, ext, label: ext ? (label + ' ('+ext+')') : label };
+}
+
+async function loadUserDirectory(){
+  const url  = await probeUsersUrl();
+  const raw  = await fetchJSON(addParam(url, 'limit', '5000'));
+  const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.users || []);
+  const byId = Object.create(null), byExt = Object.create(null);
+  list.forEach(u => {
+    const d = mkUserDisplay(u);
+    if (!d) return;
+    if (d.id)  byId[d.id]  = d.label;
+    if (d.ext) byExt[d.ext] = d.label;
+  });
+  return { byId, byExt };
+}
+
+function nameForUserGroup(g, dir){
+  const id = (g.id || '').replace(/^u-/, '');
+  if (dir.byId[id]) return dir.byId[id];
+  if (/^\d{2,6}$/.test(id) && dir.byExt[id]) return dir.byExt[id];
+  return g.name || 'User';
+}
+// ===== /User directory =====
