@@ -533,446 +533,421 @@
   window.cvIntelliOpen = openOverlay;
 })();
 
-/* ===== Smart Routing+ — Group by Destination (Portal-safe, vanilla JS) ===== */
-function groupByDestination(rows){
-  var map={}, out=[];
-  for (var i=0;i<rows.length;i++){
-    var r = rows[i];
-    var type = r.destType || 'External';
+/* ===================== Intelli Routing — COMPLETE DROP-IN ===================== */
+;(function(){
+  "use strict";
 
-    var key;
-    if (type === 'User'){
-      var nm = (r.destName || '').trim();
-      var id = (r.destId   || '').trim();
-
-      // NEVER group on the generic "User" label
-      var userKey = id || (nm && nm.toLowerCase() !== 'user' ? nm : ('unknown-' + (r.id || i)));
-
-      key = 'User:' + userKey;
-      if (!map[key]) map[key] = {
-        key   : key,
-        type  : 'User',
-        id    : userKey,                    // keep extension if we have it
-        name  : (nm && nm.toLowerCase()!=='user') ? nm : '',
-        numbers: []
-      };
-    } else {
-      var nonUserKey = type + ':' + (r.destId || r.destName || '');
-      if (!map[nonUserKey]) map[nonUserKey] = {
-        key: nonUserKey,
-        type: type,
-        id: String(r.destId || ''),
-        name: r.destName || '',
-        numbers: []
-      };
-      key = nonUserKey;
-    }
-
-    map[key].numbers.push({ id:r.id, number:r.number, label:r.label||'' });
+  /* ---------- tiny helpers ---------- */
+  function log(){ try{ console.log.apply(console, ['[Intelli]'].concat([].slice.call(arguments))); }catch(_){} }
+  function make(tag, cls, html){ var el=document.createElement(tag); if(cls) el.className=cls; if(html!=null) el.innerHTML=html; return el; }
+  function addParam(url, key, val){
+    try { var u=new URL(url, location.origin); if(!u.searchParams.has(key)) u.searchParams.set(key, val); return u.pathname+u.search; }
+    catch(_) { return url + (/\?/.test(url)?'&':'?') + encodeURIComponent(key) + '=' + encodeURIComponent(val); }
+  }
+  async function fetchJSON(url){
+    const r = await fetch(url, { credentials: 'include', headers: { 'Accept':'application/json, text/javascript, */*; q=0.01', 'X-Requested-With':'XMLHttpRequest' }});
+    const ct=(r.headers.get('content-type')||'').toLowerCase();
+    if(!r.ok) throw new Error('HTTP '+r.status+' on '+url);
+    if(ct.includes('application/json')||ct.includes('text/json')) return r.json();
+    const txt=await r.text();
+    throw new Error('Non-JSON response from '+url+(r.redirected?(' (redirected to '+r.url+')'):'')+' — first 80 chars: '+txt.slice(0,80));
+  }
+  function formatTN(s){
+    s=(s||'').replace(/[^\d]/g,''); if(s.length===11 && s[0]==='1') s=s.slice(1);
+    if(s.length===10) return '('+s.slice(0,3)+') '+s.slice(3,6)+'-'+s.slice(6); return s||'';
+  }
+  function _norm(v){ return (v||'').toString().toLowerCase(); }
+  function mapDestType(t){
+    t=_norm(t);
+    if(/^(user|person|extension)$/.test(t)) return 'User';
+    if(/^(queue|callqueue|acd)$/.test(t))   return 'Queue';
+    if(/^(aa|auto.?attendant|ivr)$/.test(t)) return 'AA';
+    if(/^(vm|voicemail)$/.test(t))          return 'VM';
+    if(/^(external|pstn|sip|route|number)$/.test(t)) return 'External';
+    return (t && t[0].toUpperCase()+t.slice(1)) || 'External';
+  }
+  function mapDestName(x, t){
+    t = mapDestType(t);
+    if (t==='User')  return x.user_name || x.owner_name || x.name || ('User '  +(x.owner_id||x.user_id||''));
+    if (t==='Queue') return x.queue_name|| x.owner_name || x.name || ('Queue ' +(x.owner_id||x.queue_id||''));
+    if (t==='AA')    return x.aa_name   || x.owner_name || x.name || ('Auto Attendant ' +(x.owner_id||x.aa_id||''));
+    if (t==='VM')    return x.vm_name   || x.owner_name || x.name || ('Voicemail ' +(x.owner_id||x.vm_id||'')); 
+    return x.route_name || x.trunk_name || x.dest || x.name || 'External';
   }
 
-  for (var k in map){
-    if (map.hasOwnProperty(k)){
-      map[k].count = map[k].numbers.length;
-      out.push(map[k]);
-    }
+  /* ===================== OVERLAY (UI) ===================== */
+  function ensureStyle(){
+    if (document.getElementById('cv-intelli-style')) return;
+    var css = [
+      '#cv-intelli-root{display:none; --cv-accent:#f89406; --cv-tint:#FDE8CC;}',
+      '#cv-intelli-root.dock{position:absolute; inset:0; z-index:9999}',
+      '#cv-intelli-root.float{position:fixed; inset:0; z-index:999999}',
+      '#cv-intelli-root .cv-back{position:absolute; inset:0; background:#fff; opacity:1}',
+      '#cv-intelli-root .cv-panel{position:absolute; inset:0; background:#fff; box-sizing:border-box; font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}',
+      '#cv-intelli-root.float .cv-panel{margin:4% auto; max-width:960px; height:auto; border-radius:12px; box-shadow:0 8px 40px rgba(0,0,0,.12)}',
+      '#cv-intelli-root .cv-h{display:flex; align-items:center; justify-content:space-between; padding:12px 16px; background:linear-gradient(180deg, var(--cv-tint), #fff); border-bottom:1px solid rgba(229,112,39,.22); font-weight:600}',
+      '#cv-intelli-root .cv-x{cursor:pointer; background:transparent; border:none; font-size:20px; line-height:1}',
+      '#cv-intelli-root .cv-b{padding:16px; height:calc(100% - 52px); overflow:auto}',
+
+      '.ir{display:flex; gap:16px; min-height:420px}',
+      '.ir-left{width:340px; flex:0 0 340px}',
+      '.ir-right{flex:1; min-width:0}',
+      '.ir-h1{font-weight:600; margin:0 0 8px}',
+      '.ir-search{width:100%; padding:8px 10px; border:1px solid #ddd; border-radius:10px}',
+      '.ir-search:focus{outline:none; box-shadow:0 0 0 3px rgba(229,112,39,.35); border-color:var(--cv-accent)}',
+      '.ir-filters{display:flex; gap:6px; flex-wrap:wrap; margin:8px 0 10px}',
+      '.chip{font-size:12px; padding:4px 8px; border:1px solid #e5e5e5; border-radius:999px; background:#fafafa; cursor:pointer}',
+      '.chip:hover{background:#f6f7fb}',
+      '.chip.active{background:var(--cv-tint); border-color:var(--cv-accent); color:#4a2a00}',
+      '.list-outer{border:1px solid #eee; border-radius:10px; background:#fff}',
+      '.card{position:relative; border:1px solid #eee; border-radius:12px; background:#fff; box-shadow:0 8px 30px rgba(0,0,0,.06); margin-bottom:12px}',
+      '.card .left-bar{position:absolute; left:0; top:0; bottom:0; width:6px; border-top-left-radius:12px; border-bottom-left-radius:12px; background:var(--cv-accent)}',
+      '.card-h{position:relative; display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 14px 12px 20px; border-bottom:1px solid #eee; background:#fafafa; border-top-left-radius:12px; border-top-right-radius:12px}',
+      '.card-title{font-weight:600; line-height:1.2}',
+      '.hdr-left{display:flex; align-items:center; gap:8px; min-width:0}',
+      '.hdr-right{display:flex; align-items:center; gap:10px; flex-shrink:0}',
+      '.count-badge{font-size:12px; background:var(--cv-tint); color:#4a2a00; border:1px solid var(--cv-accent); border-radius:999px; padding:2px 8px; white-space:nowrap}',
+      '.dest-badge{font-size:12px; padding:2px 6px; border-radius:6px; background:var(--cv-tint); border:1px solid var(--cv-accent); white-space:nowrap}',
+      '.card-b{padding:12px 14px}',
+      '.rows{position:relative; height:220px; overflow:auto; border:1px solid #f2f2f2; border-radius:8px; background:#fff}',
+      '.vpad{height:0}',
+      '.row{display:flex; align-items:center; justify-content:space-between; height:40px; padding:0 10px; border-bottom:1px solid #f6f6f6; font-variant-numeric:tabular-nums}',
+      '.row:hover{background:#fff7f2}',
+      '.row-num{font-variant-numeric:tabular-nums}',
+      '.muted{color:#666}',
+      '.controls{display:flex; gap:8px; align-items:center; margin:0 0 10px}',
+      '.sel{padding:6px 8px; border:1px solid #ddd; border-radius:8px; background:#fff}',
+      '.sel:focus{outline:none; box-shadow:0 0 0 3px rgba(229,112,39,.35); border-color:var(--cv-accent)}',
+      '.btn{cursor:pointer; border:none; background:var(--cv-accent); color:#fff; padding:8px 12px; border-radius:10px; line-height:1; font-weight:600}',
+      '.btn:hover{filter:brightness(.95)}'
+    ].join('\n');
+    var st=document.createElement('style'); st.id='cv-intelli-style'; st.type='text/css';
+    st.appendChild(document.createTextNode(css)); document.head.appendChild(st);
   }
-  out.sort(function(a,b){ return b.count - a.count || (a.type > b.type ? 1 : -1); });
-  return out;
-}
 
+  function findDockHost(){
+    var sels=['#page-content','#content','#contentArea','#main-content','#portal-content','#container','#content_wrap','#contentWrap','#workarea','#inner-content','#engagecx-slot'];
+    for(var i=0;i<sels.length;i++){ var el=document.querySelector(sels[i]); if(el && el.offsetParent!==null && el.offsetHeight>200) return el; }
+    return null;
+  }
 
-      // ---- tiny DOM helper ----
-      function make(tag, cls, html){ var el=document.createElement(tag); if(cls) el.className=cls; if(html!=null) el.innerHTML=html; return el; }
+  function ensureRoot(){
+    ensureStyle();
+    var host = findDockHost();
+    var mode = host ? 'dock' : 'float';
+    var root = document.getElementById('cv-intelli-root');
+    if(!root){
+      root = document.createElement('div');
+      root.id='cv-intelli-root';
+      root.innerHTML =
+        '<div class="cv-back"></div>'
+      + '<div class="cv-panel" role="dialog" aria-modal="true" aria-label="Intelli Routing">'
+      + '  <div class="cv-h"><div>Intelli Routing</div><button class="cv-x" title="Close">×</button></div>'
+      + '  <div class="cv-b"><div id="cv-intelli-mount">Loading…</div></div>'
+      + '</div>';
+      (host || document.body).appendChild(root);
+      function close(){ root.style.display='none'; }
+      root.querySelector('.cv-back').addEventListener('click', close);
+      root.querySelector('.cv-x').addEventListener('click', close);
+    }else{
+      var parent = host || document.body;
+      if(root.parentNode!==parent) parent.appendChild(root);
+    }
+    root.className = mode;
+    if (host && getComputedStyle(host).position==='static'){ host.style.position='relative'; }
+    return root;
+  }
 
-      // ---------- INVENTORY HELPERS ----------
-      function addParam(url, key, val){
-        try {
-          var u = new URL(url, location.origin);
-          if (!u.searchParams.has(key)) u.searchParams.set(key, val);
-          return u.pathname + u.search;
-        } catch (_) {
-          return url + (url.indexOf('?') === -1 ? '?' : '&') + encodeURIComponent(key) + '=' + encodeURIComponent(val);
-        }
+  function mountVirtualList(container, items, rowH){
+    container.innerHTML=''; container.className='rows';
+    var pad=make('div','vpad'); pad.style.height=(items.length*rowH)+'px';
+    var rows=make('div'); rows.style.position='absolute'; rows.style.left=0; rows.style.right=0; rows.style.top=0;
+    container.appendChild(pad); container.appendChild(rows);
+    function draw(){
+      var top=container.scrollTop, h=container.clientHeight;
+      var start=Math.max(0, Math.floor(top/rowH)-4);
+      var end=Math.min(items.length, start+Math.ceil(h/rowH)+8);
+      rows.style.transform='translateY('+(start*rowH)+'px)'; rows.innerHTML='';
+      for(var i=start;i<end;i++){
+        var it=items[i], row=make('div','row');
+        var left=make('div',null,'<div class="row-num">'+it.number+'</div>'+(it.label?'<div class="muted">'+it.label+'</div>':''));
+        var right=make('div','muted','#'+(it.id||'').toString().slice(-4));
+        row.appendChild(left); row.appendChild(right); rows.appendChild(row);
       }
-      async function fetchJSON(url){
-        const r = await fetch(url, {
-          credentials: 'include',
-          headers: { 'Accept': 'application/json, text/javascript, */*; q=0.01', 'X-Requested-With': 'XMLHttpRequest' }
-        });
-        const ct = (r.headers.get('content-type')||'').toLowerCase();
-        if (!r.ok) throw new Error('HTTP '+r.status+' on '+url);
-        if (ct.includes('application/json') || ct.includes('text/json')) return r.json();
-        const txt = await r.text();
-        throw new Error('Non-JSON response from '+url+(r.redirected ? ' (redirected to '+r.url+')' : '')+' — first 80 chars: '+txt.slice(0,80));
-      }
-      function formatTN(s){
-        s = (s||'').replace(/[^\d]/g,'');
-        if (s.length===11 && s[0]==='1') s=s.slice(1);
-        if (s.length===10) return '('+s.slice(0,3)+') '+s.slice(3,6)+'-'+s.slice(6);
-        return s || '';
-      }
-      function _norm(v){ return (v||'').toString().toLowerCase(); }
-      function mapDestType(t){
-        t = _norm(t);
-        if (/^(user|person|extension)$/.test(t)) return 'User';
-        if (/^(queue|callqueue|acd)$/.test(t))   return 'Queue';
-        if (/^(aa|auto.?attendant|ivr)$/.test(t)) return 'AA';
-        if (/^(vm|voicemail)$/.test(t))          return 'VM';
-        if (/^(external|pstn|sip|route|number)$/.test(t)) return 'External';
-        return (t && t[0].toUpperCase()+t.slice(1)) || 'External';
-      }
-      function mapDestName(x, t){
-        t = mapDestType(t);
-        if (t==='User')  return x.user_name || x.owner_name || x.name || ('User '  +(x.owner_id||x.user_id||''));
-        if (t==='Queue') return x.queue_name|| x.owner_name || x.name || ('Queue ' +(x.owner_id||x.queue_id||''));
-        if (t==='AA')    return x.aa_name   || x.owner_name || x.name || ('Auto Attendant ' +(x.owner_id||x.aa_id||''));
-        if (t==='VM')    return x.vm_name   || x.owner_name || x.name || ('Voicemail ' +(x.owner_id||x.vm_id||''));
-        return x.route_name || x.trunk_name || x.dest || x.name || 'External';
-      }
+    }
+    container.addEventListener('scroll', draw); draw(); return { redraw: draw };
+  }
 
-      // ---- numbers endpoint autodetect (API first) ----
-      var NUMBERS_URL = window.cvIntelliNumbersUrl || null;
-      async function probeNumbersUrl(){
-        if (NUMBERS_URL) return NUMBERS_URL;
-        const candidates = [
-          '/portal/api/numbers',
-          '/portal/api/v1/numbers',
-          '/portal/ajax/numbers',
-          '/portal/ajax/dids',
-          '/portal/inventory/numbers',
-          '/portal/inventory/dids',
-          '/portal/inventory/tns',
-          '/api/numbers',
-          '/ns-api/numbers',
-          '/portal/number/list'
-        ];
-        for (let i=0;i<candidates.length;i++){
-          try {
-            const data = await fetchJSON(addParam(candidates[i], 'limit', '25'));
-            const list = Array.isArray(data) ? data : (data.items || data.results || data.data || data.numbers);
-            if (Array.isArray(list)) { console.log('[Intelli] numbers endpoint:', candidates[i]); NUMBERS_URL = candidates[i]; return NUMBERS_URL; }
-          } catch(_) {}
-        }
-        throw new Error('No JSON endpoint; falling back to iframe scrape.');
-      }
+  /* ===================== DATA: NUMBERS (API → iframe) ===================== */
+  var NUMBERS_URL = window.cvIntelliNumbersUrl || null;
 
-      // ---- iframe scrape of Inventory (DataTables with pagination) ----
-      function scrapeInventoryViaIframe(){
-  return new Promise(function(resolve, reject){
-    try{
-      var frame = document.getElementById('cv-intelli-invframe');
-      if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
-      frame = document.createElement('iframe');
-      frame.id = 'cv-intelli-invframe';
-      frame.src = '/portal/inventory';
-      frame.setAttribute('aria-hidden','true');
-      frame.style.position='fixed'; frame.style.left='-9999px'; frame.style.top='-9999px';
-      frame.style.width='1px'; frame.style.height='1px'; frame.style.opacity='0';
-      document.body.appendChild(frame);
+  async function probeNumbersUrl(){
+    if (NUMBERS_URL) return NUMBERS_URL;
+    const candidates = [
+      '/portal/api/numbers',
+      '/portal/api/v1/numbers',
+      '/portal/ajax/numbers',
+      '/portal/ajax/dids',
+      '/portal/inventory/numbers',
+      '/portal/inventory/dids',
+      '/portal/inventory/tns',
+      '/api/numbers',
+      '/ns-api/numbers',
+      '/portal/number/list'
+    ];
+    for (let i=0;i<candidates.length;i++){
+      try {
+        const data = await fetchJSON(addParam(candidates[i], 'limit', '25'));
+        const list = Array.isArray(data) ? data : (data.items || data.results || data.data || data.numbers);
+        if (Array.isArray(list)) { log('numbers endpoint:', candidates[i]); NUMBERS_URL = candidates[i]; return NUMBERS_URL; }
+      } catch(_) {}
+    }
+    throw new Error('No JSON endpoint; falling back to iframe scrape.');
+  }
 
-      var killed=false, timeout=setTimeout(function(){ cleanup(); reject(new Error('Inventory iframe timed out')); }, 45000);
-      function cleanup(){ if (killed) return; killed=true; clearTimeout(timeout); if (frame && frame.parentNode) frame.parentNode.removeChild(frame); }
+  // parse helpers for iframe scrape
+  function findExtCandidate(text, tnDigits){
+    text=(text||'').replace(/\s+/g,' ').trim();
+    let m=text.match(/\((\d{2,6})\)/); if(m) return m[1];
+    m=text.match(/\b(?:ext(?:ension)?\.?|x|#)\s*(\d{2,6})\b/i); if(m) return m[1];
+    let rx=/\b(\d{3,6})\b/g, cand;
+    while((m=rx.exec(text))!==null){ cand=m[1]; if(tnDigits.indexOf(cand)===-1) return cand; }
+    return '';
+  }
+  function parseUserFromText(txt, tnDigits){
+    txt=(txt||'').replace(/\s+/g,' ').trim();
+    let m = txt.match(/user\s*[:\-–]?\s*([^()#|]+?)\s*(?:\((\d{2,6})\)|\b(?:ext(?:ension)?\.?|x|#)\s*(\d{2,6}))?/i);
+    if(m) return { name:(m[1]||'').trim(), id:(m[2]||m[3]||'').trim() };
+    m = txt.match(/([^()#|]+?)\s*\((\d{2,6})\)/); if(m) return { name:(m[1]||'').trim(), id:(m[2]||'').trim() };
+    m = txt.match(/([^|#()]+?)\b(?:ext(?:ension)?\.?|x|#)\s*(\d{2,6})\b/i); if(m) return { name:(m[1]||'').trim(), id:(m[2]||'').trim() };
+    const id=findExtCandidate(txt, tnDigits); return { name:'', id };
+  }
 
-      frame.onload = function(){
-        try{
-          var win = frame.contentWindow, doc = win.document, tries=0;
+  function scrapeInventoryViaIframe(){
+    return new Promise(function(resolve, reject){
+      try{
+        var frame=document.getElementById('cv-intelli-invframe');
+        if(frame && frame.parentNode) frame.parentNode.removeChild(frame);
+        frame=document.createElement('iframe');
+        frame.id='cv-intelli-invframe';
+        frame.src='/portal/inventory';
+        frame.setAttribute('aria-hidden','true');
+        Object.assign(frame.style, { position:'fixed', left:'-9999px', top:'-9999px', width:'1px', height:'1px', opacity:'0' });
+        document.body.appendChild(frame);
 
-          function findExtCandidate(text, tnDigits){
-            text = (text||'').replace(/\s+/g,' ').trim();
-            // explicit forms first: (301), ext 301, x301, #301
-            let m = text.match(/\((\d{2,6})\)/);               if (m) return m[1];
-            m = text.match(/\b(?:ext(?:ension)?\.?|x|#)\s*(\d{2,6})\b/i); if (m) return m[1];
-            // fallback: any 3-6 digit token that isn’t part of the TN
-            let rx = /\b(\d{3,6})\b/g, cand;
-            while ((m = rx.exec(text)) !== null){
-              cand = m[1];
-              if (tnDigits.indexOf(cand) === -1) return cand;
-            }
-            return '';
-          }
+        var killed=false, timeout=setTimeout(function(){ cleanup(); reject(new Error('Inventory iframe timed out')); }, 45000);
+        function cleanup(){ if(killed) return; killed=true; clearTimeout(timeout); if(frame && frame.parentNode) frame.parentNode.removeChild(frame); }
 
-          function parseUserFromText(txt, tnDigits){
-            txt = (txt||'').replace(/\s+/g,' ').trim();
-            // User: Pat Jones (301)
-            let m = txt.match(/user\s*[:\-–]?\s*([^()#|]+?)\s*(?:\((\d{2,6})\)|\b(?:ext(?:ension)?\.?|x|#)\s*(\d{2,6}))?/i);
-            if (m) return { name:(m[1]||'').trim(), id:(m[2]||m[3]||'').trim() };
-
-            // Pat Jones (301)
-            m = txt.match(/([^()#|]+?)\s*\((\d{2,6})\)/);
-            if (m) return { name:(m[1]||'').trim(), id:(m[2]||'').trim() };
-
-            // name + “ext 301” somewhere
-            m = txt.match(/([^|#()]+?)\b(?:ext(?:ension)?\.?|x|#)\s*(\d{2,6})\b/i);
-            if (m) return { name:(m[1]||'').trim(), id:(m[2]||'').trim() };
-
-            // last resort: try to extract a standalone extension not in the TN
-            const id = findExtCandidate(txt, tnDigits);
-            return { name:'', id };
-          }
-
-          (function waitDT(){
-            tries++;
-            var $ = win.jQuery || win.$;
-            var table = doc.querySelector('table.dataTable') || doc.querySelector('table');
-            if ($ && $.fn && $.fn.dataTable && table) hook($, table);
-            else if (tries<160) setTimeout(waitDT, 250);
-            else { cleanup(); reject(new Error('Inventory table not found')); }
-          })();
-
-          function hook($, table){
-            var dt = $(table).DataTable ? $(table).DataTable() :
-                     ($(table).dataTable && $(table).dataTable().api ? $(table).dataTable().api() : null);
-            if (!dt){ cleanup(); return reject(new Error('DataTables not active on inventory table')); }
-
-            try{ dt.page.len(100).draw(false); }catch(_){}
-            var out=[], seen=new Set();
-
-            function collectPage(){
-              dt.rows({page:'current'}).every(function(){
-                var tr  = this.node();
-                var tds = tr && tr.querySelectorAll ? tr.querySelectorAll('td') : [];
-                if (!tds.length) return;
-
-                var num   = (tds[0].textContent||'').trim();
-                var label = (tds[1] && tds[1].textContent || '').trim();
-
-                // MANY portals vary — grab entire row text beyond number/label
-                var remainder = '';
-                for (var i=2;i<tds.length;i++){
-                  var t=(tds[i].textContent||'').trim();
-                  if (t) remainder += (remainder ? ' | ' : '') + t;
-                }
-
-                var tnDigits = (num || '').replace(/[^\d]/g,'');
-                var destTxt  = remainder;
-
-                // figure out type
-                var mType = destTxt.match(/\b(User|Queue|Auto Attendant|AA|Voicemail|VM|External)\b/i);
-                var type = mType ? mType[1] : '';
-
-                var destName='', destId='';
-                if (/^user$/i.test(type)){
-                  var p = parseUserFromText(destTxt, tnDigits);
-                  destName = p.name || '';
-                  destId   = p.id   || '';
-                } else if (type){
-                  destName = destTxt.replace(new RegExp(type,'i'),'').replace(/^\s*[:\-–]\s*/,'').trim();
-                }
-
-                var key = tnDigits;
-                if (!key || seen.has(key)) return;
-                seen.add(key);
-
-                var dType = (type && type.toLowerCase()==='aa') ? 'AA'
-                           : (type ? type.charAt(0).toUpperCase()+type.slice(1).toLowerCase() : 'External');
-
-                out.push({
-                  id:       'n'+key.slice(-8),
-                  number:   formatTN(num),
-                  label:    label,
-                  destType: dType,
-                  destId:   String(destId || ''),
-                  destName: destName || (dType==='User' && destId ? ('User '+destId) : (dType || 'External'))
-                });
-              });
-            }
-
-            $(table).on('draw.dt', function(){
-              collectPage();
-              var info = dt.page.info();
-              if (info.page < info.pages - 1){
-                dt.page('next').draw(false);
-              } else {
-                cleanup();
-                resolve(out);
-              }
-            });
-
-            collectPage();
-            dt.draw(false);
-          }
-        }catch(e){ cleanup(); reject(e); }
-      };
-    }catch(ex){ reject(ex); }
-  });
-}
-
-
-      // ---- main numbers loader (API → fallback iframe) ----
-      async function loadInventory(){
-        try{
-          var base = await probeNumbersUrl();
-          var raw  = await fetchJSON(addParam(base,'limit','5000'));
-          var list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
-          if (!Array.isArray(list) || !list.length) throw new Error('Endpoint returned no items: ' + base);
-          return list.map(function(x, i){
-            var destType = x.dest_type || x.owner_type || x.type || x.destination_type;
-            var destId   = x.dest_id   || x.owner_id   || x.destination_id || x.owner_ext || x.ext;
-            var destName = x.dest_name || x.owner_name || x.destination_name;
-            return {
-              id:       x.id || x.uuid || ('num'+i),
-              number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
-              label:    x.label || x.alias || x.description || x.name || '',
-              destType: mapDestType(destType),
-              destId:   (destId==null ? '' : String(destId)),
-              destName: destName || mapDestName(x, destType)
-            };
-          });
-        }catch(apiErr){
-          console.warn('[Intelli] API numbers failed — falling back to iframe scrape:', apiErr && apiErr.message ? apiErr.message : apiErr);
-          return await scrapeInventoryViaIframe();
-        }
-      }
-
-      // ---------- USER DIRECTORY (names/labels) ----------
-      var USERS_URL = window.cvIntelliUsersUrl || null;
-
-      async function probeUsersUrl(){
-        if (USERS_URL) return USERS_URL;
-        const candidates = [
-          '/portal/api/users',
-          '/portal/api/v1/users',
-          '/portal/ajax/users',
-          '/portal/ajax/user/list',
-          '/api/users',
-          '/ns-api/users'
-        ];
-        for (let i=0;i<candidates.length;i++){
-          try {
-            const data = await fetchJSON(addParam(candidates[i], 'limit', '1'));
-            const list = Array.isArray(data) ? data : (data.items || data.results || data.data || data.users);
-            if (Array.isArray(list)) { console.log('[Intelli] users endpoint:', candidates[i]); USERS_URL = candidates[i]; return USERS_URL; }
-          } catch(_) {}
-        }
-        throw new Error('No users JSON endpoint; will scrape Users UI.');
-      }
-
-      function mkUserDisplay(u){
-        const ext   = String(u.ext || u.extension || u.exten || u.login || u.username || '').trim();
-        const first = (u.first_name || u.first || '').trim();
-        const last  = (u.last_name  || u.last  || '').trim();
-        const base  = (u.display_name || u.full_name || u.name || ((first||last) ? (first+' '+last).trim() : '') || '').trim();
-        const id    = String(u.id || u.user_id || u.uuid || u.uid || ext).trim();
-        const label = base || ('User ' + (ext || id));
-        return { id, ext, label: ext ? (label + ' ('+ext+')') : label };
-      }
-
-      // small iframe scrape of Users page (name + extension)
-      async function scrapeUsersViaIframe(){
-        return new Promise(function(resolve, reject){
+        frame.onload=function(){
           try{
-            var frame = document.getElementById('cv-intelli-usersframe');
-            if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
-            frame = document.createElement('iframe');
-            frame.id = 'cv-intelli-usersframe';
-            frame.src = '/portal/users';            // most installs
-            frame.setAttribute('aria-hidden','true');
-            frame.style.position='fixed'; frame.style.left='-9999px'; frame.style.top='-9999px';
-            frame.style.width='1px'; frame.style.height='1px'; frame.style.opacity='0';
-            document.body.appendChild(frame);
+            var win=frame.contentWindow, doc=win.document, tries=0;
+            (function waitDT(){
+              tries++;
+              var $=win.jQuery||win.$;
+              var table=doc.querySelector('table.dataTable')||doc.querySelector('table');
+              if($ && $.fn && $.fn.dataTable && table) hook($, table);
+              else if(tries<160) setTimeout(waitDT, 250);
+              else { cleanup(); reject(new Error('Inventory table not found')); }
+            })();
 
-            var killed=false, timeout=setTimeout(function(){ cleanup(); reject(new Error('Users iframe timed out')); }, 30000);
-            function cleanup(){ if (killed) return; killed=true; clearTimeout(timeout); if (frame && frame.parentNode) frame.parentNode.removeChild(frame); }
+            function hook($, table){
+              var dt = $(table).DataTable ? $(table).DataTable() :
+                       ($(table).dataTable && $(table).dataTable().api ? $(table).dataTable().api() : null);
+              if(!dt){ cleanup(); return reject(new Error('DataTables not active on inventory table')); }
+              try{ dt.page.len(100).draw(false); }catch(_){}
+              var out=[], seen=new Set();
 
-            frame.onload = function(){
-              try{
-                var win = frame.contentWindow, doc = win.document;
-                // find a table-like list
-                var rows = [].slice.call(doc.querySelectorAll('table tr, .list tbody tr, .table tr'));
-                var byId = Object.create(null), byExt = Object.create(null);
-                rows.forEach(function(tr){
-                  var tds = tr.querySelectorAll ? tr.querySelectorAll('td,th') : [];
-                  if (!tds || tds.length < 2) return;
-                  var text = [].map.call(tds, td => (td.textContent||'').trim());
-                  var name = (text[0] || '').trim();
-                  var ext  = '';
-                  for (var i=1;i<text.length;i++){
-                    var m = text[i].match(/\b(\d{2,6})\b/);
-                    if (m){ ext = m[1]; break; }
-                  }
-                  if (!name || !ext) return;
-                  var id = ext;
-                  byId[id]  = name + ' ('+ext+')';
-                  byExt[ext]= name + ' ('+ext+')';
+              function collectPage(){
+                dt.rows({page:'current'}).every(function(){
+                  var tr=this.node(); var tds=tr && tr.querySelectorAll ? tr.querySelectorAll('td') : [];
+                  if(!tds.length) return;
+                  var num=(tds[0].textContent||'').trim();
+                  var label=(tds[1] && tds[1].textContent || '').trim();
+                  var remainder=''; for(var i=2;i<tds.length;i++){ var t=(tds[i].textContent||'').trim(); if(t) remainder+=(remainder?' | ':'')+t; }
+                  var tnDigits=(num||'').replace(/[^\d]/g,'');
+                  var destTxt=remainder;
+                  var mType=destTxt.match(/\b(User|Queue|Auto Attendant|AA|Voicemail|VM|External)\b/i);
+                  var type=mType ? mType[1] : '';
+                  var destName='', destId='';
+                  if(/^user$/i.test(type)){ var p=parseUserFromText(destTxt, tnDigits); destName=p.name||''; destId=p.id||''; }
+                  else if(type){ destName = destTxt.replace(new RegExp(type,'i'),'').replace(/^\s*[:\-–]\s*/,'').trim(); }
+
+                  var key=tnDigits; if(!key || seen.has(key)) return; seen.add(key);
+
+                  var dType = (type && type.toLowerCase()==='aa') ? 'AA'
+                             : (type ? type.charAt(0).toUpperCase()+type.slice(1).toLowerCase() : 'External');
+
+                  out.push({
+                    id: 'n'+key.slice(-8),
+                    number: formatTN(num),
+                    label: label,
+                    destType: dType,
+                    destId: String(destId||''),
+                    destName: destName || (dType==='User' && destId ? ('User '+destId) : (dType || 'External'))
+                  });
                 });
-                cleanup();
-                resolve({ byId, byExt });
-              }catch(e){ cleanup(); reject(e); }
-            };
-          }catch(ex){ reject(ex); }
-        });
-      }
+              }
 
-      async function loadUserDirectory(){
-        try {
-          const url  = await probeUsersUrl();
-          const raw  = await fetchJSON(addParam(url, 'limit', '5000'));
-          const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.users || []);
-          const byId = Object.create(null), byExt = Object.create(null);
-          list.forEach(u => {
-            const d = mkUserDisplay(u);
-            if (!d) return;
-            if (d.id)  byId[d.id]  = d.label;
-            if (d.ext) byExt[d.ext] = d.label;
-          });
-          return { byId, byExt };
-        } catch(e){
-          console.warn('[Intelli] users JSON failed — scraping Users UI:', e && e.message ? e.message : e);
-          return await scrapeUsersViaIframe();
-        }
-      }
+              $(table).on('draw.dt', function(){
+                collectPage();
+                var info=dt.page.info();
+                if(info.page < info.pages-1) dt.page('next').draw(false);
+                else { cleanup(); resolve(out); }
+              });
 
-      function nameForUserGroup(g, dir){
-        // try direct id
-        if (dir && dir.byId && dir.byId[g.id]) return dir.byId[g.id];
-        // extension-ish id
-        if (dir && dir.byExt && /^\d{2,6}$/.test(g.id) && dir.byExt[g.id]) return dir.byExt[g.id];
-        // any existing readable name
-        if (g.name && g.name.toLowerCase()!=='user') return g.name;
-        // generic fallback
-        return g.id ? ('User ' + g.id) : 'User';
-      }
+              collectPage(); dt.draw(false);
+            }
+          }catch(e){ cleanup(); reject(e); }
+        };
+      }catch(ex){ reject(ex); }
+    });
+  }
 
-      // ---------- GROUPING + VIRTUAL LIST ----------
-      function groupByDestination(rows){
-        var map={}, out=[];
-        for (var i=0;i<rows.length;i++){
-          var r=rows[i];
-          // for Users, prefer id; fall back to name to keep them separate
-          var type = r.destType || 'External';
-          var keyId = (type==='User') ? (r.destId || r.destName || '') : (r.destId || '');
-          var key = type + ':' + keyId;
-          if(!map[key]) map[key]={ key:key, type:type, id:String(keyId||''), name:r.destName||'', numbers:[] };
-          map[key].numbers.push({ id:r.id, number:r.number, label:r.label||'' });
-        }
-        for (var k in map){ if (map.hasOwnProperty(k)){ map[k].count = map[k].numbers.length; out.push(map[k]); } }
-        out.sort(function(a,b){ return b.count - a.count || (a.type > b.type ? 1 : -1); });
-        return out;
-      }
+  async function loadInventory(){
+    try {
+      var base = await probeNumbersUrl();
+      var raw  = await fetchJSON(addParam(base, 'limit', '5000'));
+      var list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
+      if (!Array.isArray(list) || !list.length) throw new Error('Endpoint returned no items: '+base);
+      return list.map(function(x,i){
+        var destType = x.dest_type || x.owner_type || x.type || x.destination_type;
+        var destId   = x.dest_id   || x.owner_id   || x.destination_id || x.owner_ext || x.ext;
+        var destName = x.dest_name || x.owner_name || x.destination_name;
+        return {
+          id:       x.id || x.uuid || ('num'+i),
+          number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
+          label:    x.label || x.alias || x.description || x.name || '',
+          destType: mapDestType(destType),
+          destId:   (destId==null ? '' : String(destId)),
+          destName: destName || mapDestName(x, destType)
+        };
+      });
+    } catch(apiErr){
+      log('API numbers failed — falling back to iframe scrape:', apiErr && apiErr.message ? apiErr.message : apiErr);
+      return await scrapeInventoryViaIframe();
+    }
+  }
 
-      function mountVirtualList(container, items, rowH){
-        container.innerHTML=''; container.className='rows';
-        var pad=make('div','vpad'); pad.style.height=(items.length*rowH)+'px';
-        var rows=make('div'); rows.style.position='absolute'; rows.style.left=0; rows.style.right=0; rows.style.top=0;
-        container.appendChild(pad); container.appendChild(rows);
-        function draw(){
-          var top=container.scrollTop, h=container.clientHeight;
-          var start=Math.max(0, Math.floor(top/rowH)-4);
-          var end=Math.min(items.length, start+Math.ceil(h/rowH)+8);
-          rows.style.transform='translateY('+(start*rowH)+'px)'; rows.innerHTML='';
-          for(var i=start;i<end;i++){
-            var it=items[i], row=make('div','row');
-            var left=make('div',null,'<div class="row-num">'+it.number+'</div>'+(it.label?'<div class="muted">'+it.label+'</div>':''));
-            var right=make('div','muted','#'+(it.id||'').toString().slice(-4));
-            row.appendChild(left); row.appendChild(right); rows.appendChild(row);
-          }
-        }
-        container.addEventListener('scroll', draw); draw(); return { redraw: draw };
-      }
+  /* ===================== DATA: USERS DIRECTORY ===================== */
+  var USERS_URL = window.cvIntelliUsersUrl || null;
 
-      // ---------- LAYOUT ----------
-      var wrap = make('div','ir');
+  async function probeUsersUrl(){
+    if (USERS_URL) return USERS_URL;
+    const candidates = [
+      '/portal/api/users',
+      '/portal/api/v1/users',
+      '/portal/ajax/users',
+      '/portal/ajax/user/list',
+      '/api/users',
+      '/ns-api/users'
+    ];
+    for (let i=0;i<candidates.length;i++){
+      try {
+        const data = await fetchJSON(addParam(candidates[i], 'limit', '1'));
+        const list = Array.isArray(data) ? data : (data.items || data.results || data.data || data.users);
+        if (Array.isArray(list)) { log('users endpoint:', candidates[i]); USERS_URL = candidates[i]; return USERS_URL; }
+      } catch(_) {}
+    }
+    throw new Error('No users JSON endpoint; will try UI scrape.');
+  }
+
+  function mkUserDisplay(u){
+    const ext   = String(u.ext || u.extension || u.exten || u.login || u.username || '').trim();
+    const first = (u.first_name || u.first || '').trim();
+    const last  = (u.last_name  || u.last  || '').trim();
+    const base  = (u.display_name || u.full_name || u.name || ((first||last)?(first+' '+last).trim():'') || '').trim();
+    const id    = String(u.id || u.user_id || u.uuid || u.uid || ext).trim();
+    const label = base || ('User ' + (ext || id));
+    return { id, ext, label: ext ? (label + ' ('+ext+')') : label };
+  }
+
+  async function scrapeUsersViaIframe(){
+    return new Promise(function(resolve, reject){
+      try{
+        var frame=document.getElementById('cv-intelli-usersframe');
+        if(frame && frame.parentNode) frame.parentNode.removeChild(frame);
+        frame=document.createElement('iframe');
+        frame.id='cv-intelli-usersframe';
+        frame.src='/portal/users';
+        frame.setAttribute('aria-hidden','true');
+        Object.assign(frame.style, { position:'fixed', left:'-9999px', top:'-9999px', width:'1px', height:'1px', opacity:'0' });
+        document.body.appendChild(frame);
+
+        var killed=false, timeout=setTimeout(function(){ cleanup(); reject(new Error('Users iframe timed out')); }, 30000);
+        function cleanup(){ if(killed) return; killed=true; clearTimeout(timeout); if(frame && frame.parentNode) frame.parentNode.removeChild(frame); }
+
+        frame.onload=function(){
+          try{
+            var win=frame.contentWindow, doc=win.document;
+            var rows=[].slice.call(doc.querySelectorAll('table tr, .list tbody tr, .table tr'));
+            var byId=Object.create(null), byExt=Object.create(null);
+            rows.forEach(function(tr){
+              var tds=tr.querySelectorAll ? tr.querySelectorAll('td,th') : []; if(!tds || tds.length<2) return;
+              var text=[].map.call(tds, td=> (td.textContent||'').trim());
+              var name=(text[0]||'').trim(); var ext='';
+              for(var i=1;i<text.length;i++){ var m=text[i].match(/\b(\d{2,6})\b/); if(m){ ext=m[1]; break; } }
+              if(!name || !ext) return;
+              var id=ext; var label=name+' ('+ext+')';
+              byId[id]=label; byExt[ext]=label;
+            });
+            cleanup(); resolve({ byId, byExt });
+          }catch(e){ cleanup(); reject(e); }
+        };
+      }catch(ex){ reject(ex); }
+    });
+  }
+
+  async function loadUserDirectory(){
+    try{
+      const url = await probeUsersUrl();
+      const raw = await fetchJSON(addParam(url, 'limit', '5000'));
+      const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.users || []);
+      const byId=Object.create(null), byExt=Object.create(null);
+      list.forEach(u => { const d=mkUserDisplay(u); if(d.id) byId[d.id]=d.label; if(d.ext) byExt[d.ext]=d.label; });
+      return { byId, byExt };
+    }catch(e){
+      log('users JSON failed — scraping UI:', e && e.message ? e.message : e);
+      return await scrapeUsersViaIframe();
+    }
+  }
+
+  function nameForUserGroup(g, dir){
+    if (dir && dir.byId && dir.byId[g.id]) return dir.byId[g.id];
+    if (dir && dir.byExt && /^\d{2,6}$/.test(g.id) && dir.byExt[g.id]) return dir.byExt[g.id];
+    if (g.name && g.name.toLowerCase()!=='user') return g.name;
+    return g.id ? ('User '+g.id) : 'User';
+  }
+
+  /* ===================== GROUPING ===================== */
+  function groupByDestination(rows){
+    var map={}, out=[];
+    for (var i=0;i<rows.length;i++){
+      var r=rows[i];
+      var type=r.destType||'External';
+      var key;
+      if (type==='User'){
+        var nm=(r.destName||'').trim();
+        var id=(r.destId||'').trim();
+        // never merge on bare "User"
+        var userKey = id || (nm && nm.toLowerCase()!=='user' ? nm : ('unknown-'+(r.id||i)));
+        key='User:'+userKey;
+        if(!map[key]) map[key]={ key:key, type:'User', id:userKey, name:(nm && nm.toLowerCase()!=='user')?nm:'', numbers:[] };
+      }else{
+        key=type+':'+(r.destId||r.destName||'');
+        if(!map[key]) map[key]={ key:key, type:type, id:String(r.destId||''), name:r.destName||'', numbers:[] };
+      }
+      map[key].numbers.push({ id:r.id, number:r.number, label:r.label||'' });
+    }
+    for (var k in map){ if(map.hasOwnProperty(k)){ map[k].count=map[k].numbers.length; out.push(map[k]); } }
+    out.sort(function(a,b){ return b.count - a.count || (a.type > b.type ? 1 : -1); });
+    return out;
+  }
+
+  /* ===================== MOUNT APP ===================== */
+  function cvIntelliRoutingMount(root){
+    try{
+      root.innerHTML='';
+      var wrap=make('div','ir');
       wrap.innerHTML =
         '<div class="ir-left">'
       +   '<div class="ir-h1">Destinations</div>'
@@ -994,86 +969,59 @@ function groupByDestination(rows){
       +     '<label class="muted">When</label>'
       +     '<select id="ir-when" class="sel"><option value="now">Now</option><option value="custom">Pick date/time…</option></select>'
       +     '<input id="ir-dt" type="datetime-local" class="sel" style="display:none"/>'
-      +     '<span class="pill" id="ir-mode">Grouping: First Hop</span>'
+      +     '<span class="chip muted">Grouping: First Hop</span>'
       +   '</div>'
       +   '<div id="ir-detail" class="muted">Expand a destination on the left to view numbers and previews.</div>'
       + '</div>';
       root.appendChild(wrap);
 
-      // ---- AA detail (stub) ----
-      function renderAADetail(group, host){
-        host.className=''; host.innerHTML='';
-        var box = make('div','dial');
-        var head = make('div','dial-h','Dial Pad Menu');
-        var keys = make('div','dial-keys');
-        var next = make('div','dial-next','<div class="muted">Click a key to preview its routing.</div>');
-        box.appendChild(head); box.appendChild(keys); box.appendChild(next); host.appendChild(box);
-        var order = ['1','2','3','4','5','6','7','8','9','0','*','#'];
-        order.forEach(function(k){
-          var btn = make('div','dial-key', k);
-          btn.title = 'Key '+k;
-          btn.addEventListener('click', function(){
-            next.innerHTML = '<div style="font-weight:600;margin-bottom:6px">Key '+k+'</div><div class="route-row muted">Preview not wired yet.</div>';
-          });
-          keys.appendChild(btn);
-        });
-      }
       function renderNonAADetail(group, host){
         host.className=''; host.innerHTML =
           '<div class="card">'
-        + '  <div class="card-h"><div class="hdr-left"><div class="card-title">'+group.name+'</div><span class="dest-badge">'+group.type+'</span></div></div>'
+        + '  <div class="card-h"><div class="hdr-left"><div class="card-title">'+(group.name||group.type)+'</div><span class="dest-badge">'+group.type+'</span></div></div>'
         + '  <div class="card-b">This destination has <b>'+group.count+'</b> numbers.<br/><span class="muted">Use Export CSV in the left card for the full list.</span></div>'
         + '</div>';
       }
 
-      // ---- renderers ----
       var groups=[], viewGroups=[], activeDetail=null;
 
       function renderCard(g){
-        var title = (g.type==='User') ? (g.name && g.name.toLowerCase()!=='user' ? g.name : (g.id ? ('User '+g.id) : 'User')) : g.name || g.type;
-        var card = make('div','card'); card.appendChild(make('div','left-bar'));
-        var hdr = make('div','card-h');
-        var left = make('div','hdr-left');
+        var title = (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
+        var card=make('div','card'); card.appendChild(make('div','left-bar'));
+        var hdr=make('div','card-h');
+        var left=make('div','hdr-left');
         left.appendChild(make('div','card-title', title));
         left.appendChild(make('span','dest-badge', g.type));
         hdr.appendChild(left);
-
-        var right = make('div','hdr-right');
+        var right=make('div','hdr-right');
         right.appendChild(make('span','count-badge', g.count + ' number' + (g.count===1?'':'s')));
-        var btn = make('button','btn', activeDetail===g.key ? 'Collapse' : 'Expand');
+        var btn=make('button','btn', activeDetail===g.key ? 'Collapse' : 'Expand');
         right.appendChild(btn); hdr.appendChild(right);
         card.appendChild(hdr);
 
-        var body = make('div','card-b');
-        if (activeDetail===g.key) {
-          var acts = make('div','card-actions');
-          var exportBtn = make('button','btn','Export CSV');
-          exportBtn.onclick = function(){
+        var body=make('div','card-b');
+        if(activeDetail===g.key){
+          var acts=make('div','card-actions');
+          var exportBtn=make('button','btn','Export CSV');
+          exportBtn.onclick=function(){
             var csv='Number,Label\n', i, n, lbl;
             for(i=0;i<g.numbers.length;i++){ n=g.numbers[i]; lbl=(n.label||'').replace(/"/g,'""'); csv+='"'+n.number+'","'+lbl+'"\n'; }
             var blob=new Blob([csv],{type:'text/csv'}), url=URL.createObjectURL(blob), a=document.createElement('a');
             a.href=url; a.download=(g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_'); a.click(); setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
           };
-          acts.appendChild(exportBtn);
-          body.appendChild(acts);
-
-          var rows = make('div','rows'); body.appendChild(rows);
-          mountVirtualList(rows, g.numbers, 40);
-        } else {
+          acts.appendChild(exportBtn); body.appendChild(acts);
+          var rows=make('div','rows'); body.appendChild(rows); mountVirtualList(rows, g.numbers, 40);
+        }else{
           body.appendChild(make('div','muted','Click expand to view numbers and previews.'));
         }
         card.appendChild(body);
 
-        btn.onclick = function(){
+        btn.onclick=function(){
           activeDetail = (activeDetail===g.key) ? null : g.key;
           applyFilters();
           var detail=document.getElementById('ir-detail');
-          if(activeDetail===g.key){
-            if (g.type==='AA') renderAADetail(g, detail); else renderNonAADetail(g, detail);
-          } else if(!activeDetail){
-            detail.className='muted';
-            detail.innerHTML = 'Expand a destination on the left to view numbers and previews.';
-          }
+          if(activeDetail===g.key){ renderNonAADetail(g, detail); }
+          else { detail.className='muted'; detail.innerHTML='Expand a destination on the left to view numbers and previews.'; }
         };
 
         return card;
@@ -1085,60 +1033,44 @@ function groupByDestination(rows){
         document.getElementById('ir-count').textContent = viewGroups.length + ' destination group' + (viewGroups.length===1?'':'s');
         var found = viewGroups.find(function(g){ return g.key===activeDetail; });
         var detail=document.getElementById('ir-detail');
-        if (found){
-          if (found.type==='AA') renderAADetail(found, detail); else renderNonAADetail(found, detail);
-        } else if (!activeDetail){
-          detail.className='muted';
-          detail.innerHTML='Expand a destination on the left to view numbers and previews.';
-        }
+        if(found){ renderNonAADetail(found, detail); }
+        else { detail.className='muted'; detail.innerHTML='Expand a destination on the left to view numbers and previews.'; }
       }
 
       function applyFilters(){
         var term=(document.getElementById('ir-q').value||'').toLowerCase().trim();
         var chips=document.querySelectorAll('#cv-intelli-root .chip'), i, type='all';
-        for(i=0;i<chips.length;i++){ if(chips[i].classList.contains('active')){ type=chips[i].getAttribute('data-ft'); break; } }
+        for(i=0;i<chips.length;i++){ if(chips[i].classList.contains('active')){ type=chips[i].getAttribute('data-ft')||'all'; break; } }
         viewGroups=[];
         for(i=0;i<groups.length;i++){
           var g=groups[i]; if(type!=='all' && g.type!==type) continue;
-          var title = (g.type==='User') ? (g.name && g.name.toLowerCase()!=='user' ? g.name : (g.id ? ('User '+g.id) : 'User')) : g.name || g.type;
+          var title = (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
           var match=!term || (title && title.toLowerCase().indexOf(term)>=0);
           if(!match && /[0-9]/.test(term)){
-            for(var j=0;j<g.numbers.length;j++){ if(g.numbers[j].number.toLowerCase().indexOf(term)>=0){ match=true; break; } }
+            for(var j=0;j<g.numbers.length;j++){ if((g.numbers[j].number||'').toLowerCase().indexOf(term)>=0){ match=true; break; } }
           }
           if(match) viewGroups.push(g);
         }
         renderGroups();
       }
 
-      // ---------- wire UI ----------
+      // wire UI
       document.getElementById('ir-q').addEventListener('input', function(){ activeDetail=null; applyFilters(); });
-      var chips = root.querySelectorAll('.chip');
-      for(var i=0;i<chips.length;i++){
-        chips[i].addEventListener('click', function(){
-          for(var j=0;j<chips.length;j++) chips[j].classList.remove('active');
-          this.classList.add('active'); activeDetail=null; applyFilters();
-        });
-      }
+      var chips = wrap.querySelectorAll('.chip');
+      chips.forEach(function(ch){ ch.addEventListener('click', function(){
+        chips.forEach(function(c){ c.classList.remove('active'); });
+        this.classList.add('active'); activeDetail=null; applyFilters();
+      });});
       document.getElementById('ir-when').addEventListener('change', function(){
         document.getElementById('ir-dt').style.display = this.value==='custom' ? '' : 'none';
       });
 
-      // ---------- boot ----------
-      var detailEl = document.getElementById('ir-detail');
+      // boot
+      var detailEl=document.getElementById('ir-detail');
       detailEl.innerHTML='Loading inventory…';
-
       loadInventory().then(async function(rows){
-        groups = groupByDestination(rows || []);
-
-        // Resolve user names (best-effort, non-fatal)
-        try {
-          const dir = await loadUserDirectory();
-          groups.forEach(g => { if (g.type === 'User') g.name = nameForUserGroup(g, dir); });
-        } catch(e){
-          console.warn('[Intelli] user names not resolved:', e && e.message ? e.message : e);
-          groups.forEach(g => { if (g.type === 'User') g.name = nameForUserGroup(g, null); });
-        }
-
+        groups = groupByDestination(rows||[]);
+        try { window.__cvUserDir = await loadUserDirectory(); } catch(e){ log('user names not resolved:', e && e.message ? e.message : e); }
         applyFilters();
         detailEl.className='muted';
         detailEl.innerHTML='Expand a destination on the left to view numbers and previews.';
@@ -1154,10 +1086,74 @@ function groupByDestination(rows){
           + '<code>window.cvIntelliUsersUrl   = "/exact/users/path";</code><br>then click the tile again.</div>'
           + '</div>';
       });
-
-    } catch(e){
-      try { root.innerHTML = '<div style="color:#a00">Mount error: '+(e && e.message ? e.message : e)+'</div>'; } catch(_) {}
+    }catch(e){
+      try{ root.innerHTML='<div style="color:#a00">Mount error: '+(e && e.message ? e.message : e)+'</div>'; }catch(_){}
       console.error(e);
     }
-  };
+  }
+
+  function openOverlay(){
+    var root = ensureRoot();
+    root.style.display='block';
+    var mount = document.getElementById('cv-intelli-mount');
+    cvIntelliRoutingMount(mount);
+  }
+  window.cvIntelliOpen = openOverlay; // expose
+
+  /* ===================== NAV BUTTON (robust) ===================== */
+  (function insertNavButton(){
+    try{
+      function when(pred, fn){
+        if(pred()) return fn();
+        var obs=new MutationObserver(function(){ if(pred()){ obs.disconnect(); fn(); } });
+        obs.observe(document.documentElement, { childList:true, subtree:true });
+        var iv=setInterval(function(){ if(pred()){ clearInterval(iv); fn(); } }, 300);
+      }
+      function start(){
+        if (document.getElementById('nav-intelli-routing')) return;
+        var $container = (window.jQuery||window.$) ? (window.jQuery||window.$)('#nav-buttons') : null;
+        var container = $container && $container.length ? $container[0] : document.querySelector('#nav-buttons');
+        if(!container) return;
+
+        var template = document.getElementById('nav-music') || container.querySelector('li');
+        if(!template) return;
+
+        var el = template.cloneNode(true);
+        el.id='nav-intelli-routing';
+
+        var a = el.querySelector('a') || document.createElement('a');
+        if(!a.parentNode) el.appendChild(a);
+        a.id='nav-intelli-routing-link';
+        a.href='#';
+        a.title='Intelli Routing';
+        a.addEventListener('click', function(e){ e.preventDefault(); window.cvIntelliOpen(); });
+
+        var txt = el.querySelector('.nav-text'); if(txt) txt.textContent='Intelli Routing';
+        var bg  = el.querySelector('.nav-bg-image'); if(bg){
+          bg.style.webkitMaskImage = "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')";
+          bg.style.maskImage       = "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')";
+          bg.style.webkitMaskRepeat='no-repeat'; bg.style.maskRepeat='no-repeat';
+          bg.style.webkitMaskPosition='center 48%'; bg.style.maskPosition='center 48%';
+          bg.style.webkitMaskSize='71% 71%'; bg.style.maskSize='71% 71%';
+          bg.style.backgroundColor='rgba(255,255,255,0.92)';
+        }
+
+        var after=document.getElementById('nav-callhistory');
+        if(after && after.parentNode===container) container.insertBefore(el, after.nextSibling);
+        else container.appendChild(el);
+        log('Intelli Routing button inserted');
+      }
+
+      // run with or without jQuery present
+      when(function(){ return !!document.querySelector('#nav-buttons'); }, start);
+
+      // ultra-robust fallback reinserter (SPA nav changes)
+      new MutationObserver(function(){
+        if(!document.getElementById('nav-intelli-routing')){
+          var c=document.querySelector('#nav-buttons'); if(c){ start(); }
+        }
+      }).observe(document.documentElement,{childList:true,subtree:true});
+    }catch(e){ console.error('Intelli button script error:', e && e.message?e.message:e); }
+  })();
+
 })();
