@@ -605,6 +605,7 @@
       root.appendChild(wrap);
 
 // ===== REAL numbers inventory: auto-detect endpoint (override with window.cvIntelliNumbersUrl) =====
+// ===== REAL numbers inventory: API + iframe fallback =====
 var NUMBERS_URL = window.cvIntelliNumbersUrl || null;
 
 function addParam(url, key, val){
@@ -612,9 +613,8 @@ function addParam(url, key, val){
     var u = new URL(url, location.origin);
     if (!u.searchParams.has(key)) u.searchParams.set(key, val);
     return u.pathname + u.search;
-  } catch (_) { // relative only
-    if (url.indexOf('?') === -1) return url + '?' + encodeURIComponent(key) + '=' + encodeURIComponent(val);
-    return url + '&' + encodeURIComponent(key) + '=' + encodeURIComponent(val);
+  } catch (_) {
+    return url + (url.indexOf('?') === -1 ? '?' : '&') + encodeURIComponent(key) + '=' + encodeURIComponent(val);
   }
 }
 
@@ -627,11 +627,10 @@ async function fetchJSON(url){
     }
   });
   const ct = (r.headers.get('content-type') || '').toLowerCase();
-  if (!r.ok) throw new Error('HTTP ' + r.status + ' on ' + url);
+  if (!r.ok) throw new Error('HTTP '+r.status+' on '+url);
   if (ct.includes('application/json') || ct.includes('text/json')) return r.json();
-
   const txt = await r.text();
-  throw new Error('Non-JSON response from ' + url + (r.redirected ? ' (redirected to ' + r.url + ')' : '') + ' — first 80 chars: ' + txt.slice(0,80));
+  throw new Error('Non-JSON response from '+url+(r.redirected ? ' (redirected to '+r.url+')' : '')+' — first 80 chars: '+txt.slice(0,80));
 }
 
 async function probeNumbersUrl(){
@@ -649,14 +648,14 @@ async function probeNumbersUrl(){
     '/portal/number/list'
   ];
   for (var i=0;i<candidates.length;i++){
-    var test = addParam(candidates[i], 'limit', '25');
     try {
-      var data = await fetchJSON(test);
-      var list = Array.isArray(data) ? data : (data.items || data.results || data.data || data.numbers);
+      const data = await fetchJSON(addParam(candidates[i], 'limit', '25'));
+      const list = Array.isArray(data) ? data : (data.items || data.results || data.data || data.numbers);
       if (Array.isArray(list)) { console.log('[Intelli] numbers endpoint:', candidates[i]); NUMBERS_URL = candidates[i]; return NUMBERS_URL; }
-    } catch(e){ /* try next */ }
+    } catch(_){ /* try next */ }
   }
-  throw new Error('No numbers endpoint responded with JSON. Set window.cvIntelliNumbersUrl manually.');
+  // none gave JSON → we’ll scrape the UI.
+  throw new Error('No JSON endpoint; falling back to iframe scrape.');
 }
 
 function formatTN(s){
@@ -684,27 +683,121 @@ function mapDestName(x, t){
   return x.route_name || x.trunk_name || x.dest || x.name || 'External';
 }
 
-async function loadInventory(){
-  var base = await probeNumbersUrl();                 // may throw if none work
-  var raw  = await fetchJSON(addParam(base,'limit','5000'));
-  var list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
-  if (!Array.isArray(list) || !list.length) {
-    throw new Error('Endpoint returned no items: ' + base);
-  }
-  return list.map(function(x, i){
-    var destType = x.dest_type || x.owner_type || x.type || x.destination_type;
-    var destId   = x.dest_id   || x.owner_id   || x.destination_id;
-    var destName = x.dest_name || x.owner_name || x.destination_name;
-    return {
-      id:       x.id || x.uuid || ('num'+i),
-      number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
-      label:    x.label || x.alias || x.description || x.name || '',
-      destType: mapDestType(destType),
-      destId:   String(destId || ''),
-      destName: destName || mapDestName(x, destType)
-    };
+/* ---------- iframe scraper (Inventory page DataTable) ---------- */
+function scrapeInventoryViaIframe(){
+  return new Promise(function(resolve, reject){
+    try{
+      var frame = document.getElementById('cv-intelli-invframe');
+      if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+      frame = document.createElement('iframe');
+      frame.id = 'cv-intelli-invframe';
+      frame.src = '/portal/inventory';
+      frame.setAttribute('aria-hidden','true');
+      frame.style.position='fixed'; frame.style.left='-9999px'; frame.style.top='-9999px';
+      frame.style.width='1px'; frame.style.height='1px'; frame.style.opacity='0';
+      document.body.appendChild(frame);
+
+      var killed=false, timeout=setTimeout(function(){ cleanup(); reject(new Error('Inventory iframe timed out')); }, 45000);
+      function cleanup(){ if (killed) return; killed=true; clearTimeout(timeout); if (frame && frame.parentNode) frame.parentNode.removeChild(frame); }
+
+      frame.onload = function(){
+        try{
+          var win = frame.contentWindow, doc = win.document, tries=0;
+          (function waitDT(){
+            tries++;
+            var $ = win.jQuery || win.$;
+            var table = doc.querySelector('table.dataTable') || doc.querySelector('table');
+            if ($ && $.fn && $.fn.dataTable && table) hook($, table);
+            else if (tries<160) setTimeout(waitDT, 250);
+            else { cleanup(); reject(new Error('Inventory table not found')); }
+          })();
+
+          function hook($, table){
+            var dt = $(table).DataTable ? $(table).DataTable() :
+                     ($(table).dataTable && $(table).dataTable().api ? $(table).dataTable().api() : null);
+            if (!dt){ cleanup(); return reject(new Error('DataTables not active on inventory table')); }
+
+            try{ dt.page.len(100).draw(false); }catch(_){}
+            var out=[], seen=new Set();
+
+            function collectPage(){
+              dt.rows({page:'current'}).every(function(){
+                var tr = this.node();
+                var tds = tr && tr.querySelectorAll ? tr.querySelectorAll('td') : [];
+                var num='', label='', type='', name='';
+                if (tds.length){
+                  num = (tds[0].textContent||'').trim();
+                  label = (tds[1] && tds[1].textContent || '').trim();
+                  for (var i=2;i<tds.length;i++){
+                    var t=(tds[i].textContent||'').trim();
+                    var m=t.match(/(User|Queue|Auto Attendant|AA|Voicemail|VM|External)/i);
+                    if(m){ type=m[1]; name=t.replace(m[0],'').replace(/^\s*[:\-–]\s*/,'').trim(); break; }
+                  }
+                }
+                var key = (num || '').replace(/[^\d]/g,'');
+                if (key && !seen.has(key)){
+                  seen.add(key);
+                  out.push({
+                    id: 'n'+key.slice(-8),
+                    number: formatTN(num),
+                    label:  label,
+                    destType: mapDestType(type||'External'),
+                    destId: '',
+                    destName: name || ''
+                  });
+                }
+              });
+            }
+
+            $(table).on('draw.dt', function(){
+              collectPage();
+              var info = dt.page.info();
+              if (info.page < info.pages - 1){
+                dt.page('next').draw(false);
+              } else {
+                cleanup();
+                resolve(out);
+              }
+            });
+
+            // kick off
+            collectPage();
+            dt.draw(false);
+          }
+        }catch(e){ cleanup(); reject(e); }
+      };
+    }catch(ex){ reject(ex); }
   });
 }
+
+/* ---------- main loader ---------- */
+async function loadInventory(){
+  try{
+    // try JSON API first
+    var base = await probeNumbersUrl();
+    var raw  = await fetchJSON(addParam(base,'limit','5000'));
+    var list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
+    if (!Array.isArray(list) || !list.length) throw new Error('Endpoint returned no items: ' + base);
+    return list.map(function(x, i){
+      var destType = x.dest_type || x.owner_type || x.type || x.destination_type;
+      var destId   = x.dest_id   || x.owner_id   || x.destination_id;
+      var destName = x.dest_name || x.owner_name || x.destination_name;
+      return {
+        id:       x.id || x.uuid || ('num'+i),
+        number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
+        label:    x.label || x.alias || x.description || x.name || '',
+        destType: mapDestType(destType),
+        destId:   String(destId || ''),
+        destName: destName || mapDestName(x, destType)
+      };
+    });
+  }catch(apiErr){
+    console.warn('[Intelli] API numbers failed — falling back to iframe scrape:', apiErr && apiErr.message ? apiErr.message : apiErr);
+    return await scrapeInventoryViaIframe();
+  }
+}
+// ===== /REAL numbers inventory =====
+
 // ===== /REAL numbers inventory =====
 
       // ---- AA side-open detail (stub) ----
