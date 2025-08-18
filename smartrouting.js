@@ -536,21 +536,75 @@
 
 /* ===================== Intelli Routing — COMPLETE DROP-IN ===================== */
 (function(){
-
   /* ===================== HELPERS ===================== */
-  function make(tag, cls, text){
+  function log(){ try{ console.log.apply(console, arguments); }catch(e){} }
+  function make(tag, cls, txt){
     var el=document.createElement(tag);
     if(cls) el.className=cls;
-    if(text!=null) el.textContent=text;
+    if(txt!=null) el.textContent=txt;
     return el;
   }
-  function log(){ try{ console.log.apply(console, arguments); }catch(e){} }
-  function _normKey(s){ return (s||'').toLowerCase().replace(/\s+/g,''); }
+  function _normKey(s){
+    return (s||'').toString().trim().toLowerCase();
+  }
+
+  async function loadInventory(){
+    if(!window.cvIntelliNumbersUrl) throw new Error("cvIntelliNumbersUrl not set");
+    let resp = await fetch(window.cvIntelliNumbersUrl, { credentials:"include" });
+    if(!resp.ok) throw new Error("Inventory load failed: "+resp.status);
+    return resp.json();
+  }
+
+  async function loadUserDirectory(){
+    if(!window.cvIntelliUsersUrl) throw new Error("cvIntelliUsersUrl not set");
+    let resp = await fetch(window.cvIntelliUsersUrl, { credentials:"include" });
+    if(!resp.ok) throw new Error("User dir load failed: "+resp.status);
+    return resp.json();
+  }
+
+  function groupByDestination(rows){
+    var out = [], map = {};
+    rows.forEach(function(r){
+      var key = r.destType+":"+r.destId;
+      if(!map[key]){
+        map[key] = {
+          key: key,
+          id: r.destId,
+          type: r.destType,
+          name: r.destName||'',
+          numbers: []
+        };
+        out.push(map[key]);
+      }
+      map[key].numbers.push({ number:r.number, label:r.label||'' });
+    });
+    out.forEach(function(g){ g.count = g.numbers.length; });
+    return out;
+  }
+
+  function mountVirtualList(host, items, rowHeight, rightLabel){
+    host.innerHTML='';
+    var ul=make('div','vlist');
+    host.appendChild(ul);
+    items.forEach(function(it){
+      var row=make('div','row');
+      row.appendChild(make('div','cell number', it.number));
+      row.appendChild(make('div','cell label', it.label||''));
+      if(rightLabel) row.appendChild(make('div','cell right', rightLabel));
+      ul.appendChild(row);
+    });
+  }
+
+  function nameForUserGroup(g, userDir){
+    if(!userDir) return g.name||g.type;
+    var u = userDir[g.id];
+    return u ? (u.firstName+" "+u.lastName) : (g.name||g.type);
+  }
 
   function getGroupTitle(g){
-    return (g.type === 'User')
+    return (g.type==='User')
       ? nameForUserGroup(g, window.__cvUserDir||null)
-      : (g.name || g.type);
+      : (g.name||g.type);
   }
 
   /* ===================== MOUNT APP ===================== */
@@ -618,18 +672,21 @@
           var acts=make('div','card-actions');
           var exportBtn=make('button','btn','Export CSV');
           exportBtn.onclick=function(){
-            var csv='Number,Label\n', i, n, lbl;
-            for(i=0;i<g.numbers.length;i++){ 
-              n=g.numbers[i]; 
-              lbl=(n.label||'').replace(/"/g,'""'); 
-              csv+='"'+n.number+'","'+lbl+'"\n'; 
-            }
-            var blob=new Blob([csv],{type:'text/csv'}), url=URL.createObjectURL(blob), a=document.createElement('a');
-            a.href=url; a.download=(g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_'); 
-            a.click(); 
+            var csv='Number,Label\n';
+            g.numbers.forEach(function(n){
+              var lbl=(n.label||'').replace(/"/g,'""');
+              csv+='"'+n.number+'","'+lbl+'"\n';
+            });
+            var blob=new Blob([csv],{type:'text/csv'});
+            var url=URL.createObjectURL(blob);
+            var a=document.createElement('a');
+            a.href=url; 
+            a.download=(g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_');
+            a.click();
             setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
           };
-          acts.appendChild(exportBtn); body.appendChild(acts);
+          acts.appendChild(exportBtn); 
+          body.appendChild(acts);
 
           var rows=make('div','rows'); 
           body.appendChild(rows);
@@ -652,8 +709,7 @@
       }
 
       function renderGroups(){
-        var host=document.getElementById('ir-groups'); 
-        host.innerHTML='';
+        var host=document.getElementById('ir-groups'); host.innerHTML='';
         for(var i=0;i<viewGroups.length;i++){ host.appendChild(renderCard(viewGroups[i])); }
         document.getElementById('ir-count').textContent = viewGroups.length + ' destination group' + (viewGroups.length===1?'':'s');
         var found = viewGroups.find(function(g){ return g.key===activeDetail; });
@@ -665,22 +721,14 @@
       function applyFilters(){
         var term=_normKey(document.getElementById('ir-q').value||'');
         var chips=document.querySelectorAll('#cv-intelli-root .chip'), i, type='all';
-        for(i=0;i<chips.length;i++){ 
-          if(chips[i].classList.contains('active')){ 
-            type=chips[i].getAttribute('data-ft')||'all'; 
-            break; 
-          } 
-        }
+        for(i=0;i<chips.length;i++){ if(chips[i].classList.contains('active')){ type=chips[i].getAttribute('data-ft')||'all'; break; } }
         viewGroups=[];
         for(i=0;i<groups.length;i++){
-          var g=groups[i]; 
-          if(type!=='all' && g.type!==type) continue;
+          var g=groups[i]; if(type!=='all' && g.type!==type) continue;
           var title = getGroupTitle(g);
           var match=!term || (title && _normKey(title).indexOf(term)>=0);
           if(!match && /[0-9]/.test(term)){
-            for(var j=0;j<g.numbers.length;j++){ 
-              if(_normKey(g.numbers[j].number).indexOf(term)>=0){ match=true; break; } 
-            }
+            for(var j=0;j<g.numbers.length;j++){ if(_normKey(g.numbers[j].number).indexOf(term)>=0){ match=true; break; } }
             if(!match && g.id && _normKey(String(g.id)).indexOf(term)>=0) match=true;
           }
           if(match) viewGroups.push(g);
@@ -715,9 +763,6 @@
           '<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
           + '<div style="font-weight:600; margin-bottom:6px;">Could not load phone number inventory</div>'
           + '<div style="margin-bottom:6px;">' + (err && err.message ? err.message : err) + '</div>'
-          + '<div style="font-size:12px;">If you know the endpoints, set in console:<br>'
-          + '<code>window.cvIntelliNumbersUrl = "/exact/numbers/path";</code><br>'
-          + '<code>window.cvIntelliUsersUrl   = "/exact/users/path";</code><br>then click the tile again.</div>'
           + '</div>';
       });
     }catch(e){
@@ -726,13 +771,28 @@
     }
   }
 
+  function ensureRoot(){
+    var root=document.getElementById('cv-intelli-root');
+    if(!root){
+      root=document.createElement('div');
+      root.id='cv-intelli-root';
+      document.body.appendChild(root);
+    }
+    return root;
+  }
+
   function openOverlay(){
     var root = ensureRoot();
     root.style.display='block';
     var mount = document.getElementById('cv-intelli-mount');
+    if(!mount){
+      mount=document.createElement('div');
+      mount.id='cv-intelli-mount';
+      root.appendChild(mount);
+    }
     cvIntelliRoutingMount(mount);
   }
-  window.cvIntelliOpen = openOverlay;
+  window.cvIntelliOpen = openOverlay; 
 
   window.addEventListener('cv:intelli-routing:open', openOverlay, false);
 
@@ -747,8 +807,7 @@
       }
       function start(){
         if (document.getElementById('nav-intelli-routing')) return;
-        var $container = (window.jQuery||window.$) ? (window.jQuery||window.$)('#nav-buttons') : null;
-        var container = $container && $container.length ? $container[0] : document.querySelector('#nav-buttons');
+        var container=document.querySelector('#nav-buttons');
         if(!container) return;
 
         var template = document.getElementById('nav-music') || container.querySelector('li');
