@@ -559,6 +559,10 @@
   }
   function _norm(v){ return (v==null?'':String(v)).trim(); }
   function _normKey(v){ return _norm(v).toLowerCase(); }
+  
+  var title = getGroupTitle(g);
+var match=!term || (title && _normKey(title).indexOf(term)>=0);
+
 
   // Map UI text to canonical destination types
   function mapDestType(t){
@@ -1006,10 +1010,11 @@
 
       var groups=[], viewGroups=[], activeDetail=null;
 
+      
       function renderCard(g){
-        var title = (g.type === 'User')
-          ? nameForUserGroup(g, window.__cvUserDir||null)
-          : (g.name || g.type);
+        var title = getGroupTitle(g);
+        var card=make('div','card'); 
+        card.appendChild(make('div','left-bar'));
         var card=make('div','card'); card.appendChild(make('div','left-bar'));
         var hdr=make('div','card-h');
         var left=make('div','hdr-left');
@@ -1071,8 +1076,8 @@
         viewGroups=[];
         for(i=0;i<groups.length;i++){
           var g=groups[i]; if(type!=='all' && g.type!==type) continue;
-          var title = (g.type === 'User')
-            ? nameForUserGroup(g, window.__cvUserDir||null)
+          var title = getGroupTitle(g);
+          var match=!term || (title && _normKey(title).indexOf(term)>=0);
             : (g.name || g.type);
           var match=!term || (title && _normKey(title).indexOf(term)>=0);
           if(!match && /[0-9]/.test(term)){
