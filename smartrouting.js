@@ -141,17 +141,17 @@
       '#cv-intelli-root{display:none; --cv-accent:'+DEFAULT_ACCENT+'; --cv-tint:'+DEFAULT_TINT+';}',
       '#cv-intelli-root.dock{position:absolute; inset:0; z-index:9999}',
       '#cv-intelli-root.float{position:fixed; inset:0; z-index:999999}',
-      '#cv-intelli-root .cv-back{position:absolute; inset:0; background:#fff; opacity:1}', /* solid backdrop */
+      '#cv-intelli-root .cv-back{position:absolute; inset:0; background:#fff; opacity:1}',
       '#cv-intelli-root .cv-panel{position:absolute; inset:0; background:#fff; box-sizing:border-box; font:13px/1.35 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}',
       '#cv-intelli-root.float .cv-panel{margin:4% auto; max-width:1040px; height:auto; border-radius:12px; box-shadow:0 8px 40px rgba(0,0,0,.12)}',
 
-      /* hide the portal’s orange banner (we already have the grey title bar) */
+      /* hide portal banner; we draw our own */
       '#cv-intelli-root .cv-h{display:none}',
       '#cv-intelli-root .cv-b{padding:10px 12px; height:100%; overflow:auto}',
 
       /* compact list layout (left column only) */
       '#cv-intelli-root .ir{display:flex; gap:12px; min-height:420px}',
-      '#cv-intelli-root .ir-right{display:none!important;}',
+      '#cv-intelli-root .ir-right{display:none!important;}', /* keep the old portal right pane hidden */
       '#cv-intelli-root .ir-left{width:520px!important;max-width:620px!important;}',
       '#cv-intelli-root .ir-h1{font-weight:600; margin:0 0 6px; font-size:13px; color:#333}',
       '#cv-intelli-root .ir-search{width:100%; padding:6px 9px; border:1px solid #ddd; border-radius:8px}',
@@ -170,28 +170,23 @@
       '#cv-intelli-root .count-badge{font-size:11px; background:var(--cv-tint); color:#4a2a00; border:1px solid var(--cv-accent); border-radius:999px; padding:1px 7px; white-space:nowrap}',
       '#cv-intelli-root .dest-badge{font-size:11px; padding:1px 6px; border-radius:6px; background:var(--cv-tint); border:1px solid var(--cv-accent); white-space:nowrap}',
 
-      '#cv-intelli-root .row-left{flex:1; min-width:0}',
-      '#cv-intelli-root .row-right{flex:0 0 52%; max-width:52%; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}',
-
-      /* expand/collapse body */
-      '#cv-intelli-root .card-b{padding:8px 12px; display:none}',
-      '#cv-intelli-root .card.open .card-b{display:block}',
-
-      /* mini scroller for numbers */
+      /* rows (left number, right description) */
       '#cv-intelli-root .rows{position:relative; max-height:180px; overflow:auto; border:1px solid #eee; border-radius:8px; background:#fff}',
       '#cv-intelli-root .vpad{height:0}',
       '#cv-intelli-root .row{display:flex; align-items:center; justify-content:space-between; height:32px; padding:0 10px; border-bottom:1px solid #f6f6f6; font-variant-numeric:tabular-nums}',
       '#cv-intelli-root .row:hover{background:#fff7f2}',
+      '#cv-intelli-root .row-left{flex:1; min-width:0}',
+      '#cv-intelli-root .row-right{flex:0 0 52%; max-width:52%; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block!important}',
       '#cv-intelli-root .row-num{font-variant-numeric:tabular-nums}',
       '#cv-intelli-root .muted{color:#666; font-size:12px}',
 
-      /* generic buttons */
+      /* buttons */
       '#cv-intelli-root .btn{cursor:pointer; border:none; background:var(--cv-accent); color:#fff; padding:7px 10px; border-radius:9px; line-height:1; font-weight:600; font-size:12px}',
       '#cv-intelli-root .btn:hover{filter:brightness(.96)}',
       '#cv-intelli-root .btn.ghost{background:#f6f6f6; color:#333; border:1px solid #e3e3e3}',
       '#cv-intelli-root .btn:disabled{opacity:.5; cursor:not-allowed}',
 
-      /* preview drawer (kept, but optional) */
+      /* optional drawer */
       '#cv-intelli-root .drawer{position:fixed; right:24px; bottom:24px; width:560px; max-width:calc(100% - 48px); max-height:72vh; background:#fff; border:1px solid #ddd; border-radius:12px; box-shadow:0 12px 48px rgba(0,0,0,.18); transform:translateY(12px); opacity:0; pointer-events:none; transition:opacity .16s ease, transform .16s ease;}',
       '#cv-intelli-root .drawer.open{opacity:1; transform:none; pointer-events:auto;}',
       '#cv-intelli-root .drawer-h{padding:10px 12px; background:#fafafa; border-bottom:1px solid #eee; display:flex; align-items:center; justify-content:space-between; font-weight:600}',
@@ -218,7 +213,7 @@
     return null;
   }
 
-    /* ------- Banner / Title helpers ------- */
+  /* ------- Banner / Title helpers ------- */
   var _bannerEls = [], _origBannerTexts = [];
   function collectBannerEls(){
     _bannerEls = []; _origBannerTexts = [];
@@ -336,14 +331,6 @@
     }
   }
 
-  function isAAString(s){
-  s = _normKey(s);
-  if (!s) return false;
-  // covers: “Auto Attendant”, “Auto-Attendant”, “AutoAttendant”, “IVR”, “Main Menu”, etc.
-  return /\b(aa|ivr|auto[\s\-_]*attendant|attendant\s*menu|call\s*menu|main\s*menu|digital\s*receptionist|receptionist)\b/.test(s);
-}
-
-  
   window.addEventListener('cv:intelli-routing:open', openOverlay, false);
   window.cvIntelliOpen = openOverlay;
 })();
@@ -356,27 +343,6 @@
   window.cvIntelliExportUrl = window.cvIntelliExportUrl || '/portal/inventory/export.csv';
   window.cvIntelliPreferMode = window.cvIntelliPreferMode || 'export'; // 'export' | 'api' | 'scrape'
   var __cvInvPromise = null;
-
-  /* ---------- classification helpers + type mapping ---------- */
-function isAAString(s){
-  s = _normKey(s);
-  if (!s) return false;
-  // “Auto Attendant”, “Auto-Attendant”, “AutoAttendant”, “IVR”, “Main Menu”, etc.
-  return /\b(aa|ivr|auto[\s\-_]*attendant|attendant\s*menu|call\s*menu|main\s*menu|digital\s*receptionist|receptionist)\b/.test(s);
-}
-
-function mapDestType(t, name){
-  var tt = _normKey(t);
-  var nn = _normKey(name);
-
-  if (/\b(queue|call ?queue|acd)\b/.test(tt)) return 'Queue';
-  if (/\b(user|person|extension)\b/.test(tt)) return 'User';
-  if (isAAString(tt) || isAAString(nn))      return 'AA';
-  if (/\b(vm|voice ?mail|voicemail)\b/.test(tt)) return 'VM';
-  if (/\b(available number|unassigned)\b/.test(tt)) return 'External';
-  if (/\b(external|pstn|sip|route|number)\b/.test(tt) || /number$/.test(tt)) return 'External';
-  return 'External';
-}
 
   /* ---------- helpers ---------- */
   function log(){ try{ console.log.apply(console, ['[Intelli]'].concat([].slice.call(arguments))); }catch(_){} }
@@ -400,28 +366,21 @@ function mapDestType(t, name){
   function _norm(v){ return (v==null?'':String(v)).trim(); }
   function _normKey(v){ return _norm(v).toLowerCase(); }
 
-  /* ---------- type mapping (from Treatment + Destination text) ---------- */
-  function mapDestType(t, name){
-  // normalize both the “treatment” and the destination/name
-  var tt = _normKey(t);
-  var nn = _normKey(name);
+  /* ---------- STRICT TYPE from TREATMENT ONLY ---------- */
+  function _isAA(t){ t=_normKey(t); return /\b(ivr|auto[\s\-_]*attendant|aa|attendant\s*menu|main\s*menu|call\s*menu)\b/.test(t); }
+  function _isQueue(t){ t=_normKey(t); return /\b(queue|call\s*queue|acd)\b/.test(t); }
+  function _isUser(t){ t=_normKey(t); return /\b(user|person|extension)\b/.test(t); }
+  function _isVM(t){ t=_normKey(t); return /\b(vm|voice\s*mail|voicemail)\b/.test(t); }
+  function _isExternal(t){ t=_normKey(t); return /\b(available\s*number|unassigned|external|pstn|sip|route|number)\b/.test(t) || /number$/.test(t); }
 
-  // queues first (already working for you)
-  if (/\b(queue|call ?queue|acd)\b/.test(tt)) return 'Queue';
-  // strong “User” labels
-  if (/\b(user|person|extension)\b/.test(tt)) return 'User';
-  // AA via treatment OR by reading the destination/name
-  if (isAAString(tt) || isAAString(nn)) return 'AA';
-  // voicemail
-  if (/\b(vm|voice ?mail|voicemail)\b/.test(tt)) return 'VM';
-  // explicit externals / available
-  if (/\b(available number|unassigned)\b/.test(tt)) return 'External';
-  if (/\b(external|pstn|sip|route|number)\b/.test(tt) || /number$/.test(tt)) return 'External';
-
-  // default: treat as External instead of misclassifying as User
-  return 'External';
-}
-
+  function typeFromTreatment(t){
+    if (_isQueue(t))   return 'Queue';
+    if (_isAA(t))      return 'AA';
+    if (_isUser(t))    return 'User';
+    if (_isVM(t))      return 'VM';
+    if (_isExternal(t))return 'External';
+    return 'External';
+  }
 
   /* ---------- CSV helpers (Inventory → rows) ---------- */
   function parseCSV(text) {
@@ -442,26 +401,33 @@ function mapDestType(t, name){
                .map(r => { var o = {}; for (var j=0; j<headers.length; j++) o[headers[j]] = (r[j] || '').trim(); return o; });
   }
 
+  function extFromDestination(destText){
+    const s = _norm(destText);
+    let m = s.match(/^\s*(\d{2,6})\b/);
+    if (m) return m[1];
+    m = s.match(/\((\d{2,6})\)/) || s.match(/\b(?:ext(?:ension)?\.?|x|#)\s*(\d{2,6})\b/i) || s.match(/\b(\d{2,6})\b/);
+    return m ? m[1] : '';
+  }
+
   function mapExportRecord(rec) {
-  function pick(o, ks) { for (var k of ks) if (o[k] != null && String(o[k]).trim() !== '') return String(o[k]).trim(); return ''; }
-  var phone = pick(rec, ['Phone Number','Phone','Number','TN','DID','DNIS']);
-  var treat = pick(rec, ['Treatment','Routing','Type','Destination Type','Owner Type']);
-  var dname = pick(rec, ['Destination','Destination Name','Owner','Owner Name','Notes','Description']);
-  var did   = pick(rec, ['Dest ID','Destination ID','Owner ID','Extension','Ext','Login','Username','User ID']);
-  if (!did && dname) did = extFromDestination(dname);
-  var digits = (phone || '').replace(/[^\d]/g,'');
-  var label  = pick(rec, ['Label','Alias','Tag']) || dname;
+    function pick(o, ks) { for (var k of ks) if (o[k] != null && String(o[k]).trim() !== '') return String(o[k]).trim(); return ''; }
+    var phone = pick(rec, ['Phone Number','Phone','Number','TN','DID','DNIS']);
+    var treat = pick(rec, ['Treatment','Routing','Type','Destination Type','Owner Type']);
+    var dname = pick(rec, ['Destination','Destination Name','Owner','Owner Name','Notes','Description']);
+    var did   = pick(rec, ['Dest ID','Destination ID','Owner ID','Extension','Ext','Login','Username','User ID']);
+    if (!did && dname) did = extFromDestination(dname);
+    var digits = (phone || '').replace(/[^\d]/g,'');
+    var label  = pick(rec, ['Label','Alias','Tag']) || dname;
 
-  return {
-    id:       (rec.id || rec.uuid || ('n' + (digits || '').slice(-8))),
-    number:   formatTN(phone),
-    label:    label,
-    destType: mapDestType(treat, dname),   // ← classify using treatment + destination text
-    destId:   String(did || ''),
-    destName: _norm(dname)
-  };
-}
-
+    return {
+      id:       (rec.id || rec.uuid || ('n' + (digits || '').slice(-8))),
+      number:   formatTN(phone),
+      label:    label,
+      destType: typeFromTreatment(treat),    // STRICT: by Treatment only
+      destId:   String(did || ''),
+      destName: _norm(dname)
+    };
+  }
 
   async function probeExportUrl() {
     if (window.cvIntelliExportUrl) return window.cvIntelliExportUrl;
@@ -566,12 +532,12 @@ function mapDestType(t, name){
                   data.forEach(function(tr){
                     var c = readRowCells(tr); if (!c) return;
                     var tnDigits = (c.phone||'').replace(/[^\d]/g,''); if (!tnDigits || seen.has(tnDigits)) return; seen.add(tnDigits);
-                    var type = mapDestType(c.treatment, c.destination);   // ← name-aware
+                    var type = typeFromTreatment(c.treatment);                              // STRICT by treatment
                     var id   = (type==='User' || type==='AA' || type==='Queue') ? extFromDestination(c.destination) : '';
                     rows.push({
                       id:       'n'+tnDigits.slice(-8),
                       number:   formatTN(c.phone),
-                      label:    _norm(c.destination),   // fallback label = Destination
+                      label:    _norm(c.destination),   // per-row description
                       destType: type,
                       destId:   String(id || ''),
                       destName: _norm(c.destination)
@@ -589,7 +555,7 @@ function mapDestType(t, name){
                 dt.rows({ page:'current' }).every(function(){
                   var c = readRowCells(this.node()); if (!c) return;
                   var tnDigits = (c.phone||'').replace(/[^\d]/g,''); if(!tnDigits || seen.has(tnDigits)) return; seen.add(tnDigits);
-                  var type = mapDestType(c.treatment, c.destination);     // ← name-aware
+                  var type = typeFromTreatment(c.treatment);                                // STRICT by treatment
                   var id   = (type==='User' || type==='AA' || type==='Queue') ? extFromDestination(c.destination) : '';
                   out.push({
                     id:       'n'+tnDigits.slice(-8),
@@ -639,13 +605,13 @@ function mapDestType(t, name){
         const rows = list.map(function(x,i){
           const typeRaw = x.dest_type || x.owner_type || x.type || x.destination_type || x.treatment;
           const nameRaw = x.dest_name || x.owner_name || x.destination_name || x.destination || x.notes || '';
-          const type    = mapDestType(typeRaw, nameRaw);                // ← name-aware
+          const type    = typeFromTreatment(typeRaw);                                  // STRICT by treatment
           const idRaw   = x.dest_id   || x.owner_id   || x.destination_id || x.owner_ext || x.ext
                           || (type==='User'||type==='AA'||type==='Queue' ? extFromDestination(nameRaw) : '');
           return {
             id:       x.id || x.uuid || ('num'+i),
             number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
-            label:    x.label || x.alias || _norm(nameRaw),              // fallback label = Destination
+            label:    x.label || x.alias || _norm(nameRaw),                             // per-row description
             destType: type,
             destId:   String(idRaw || ''),
             destName: _norm(nameRaw)
@@ -741,15 +707,16 @@ function mapDestType(t, name){
     return g.id ? ('User '+g.id) : 'User';
   }
 
-  /* ---------- grouping ---------- */
+  /* ---------- grouping (PRIMARY: by Treatment; SECOND: by destination extension) ---------- */
   function groupByDestination(rows){
     var map = Object.create(null), out = [];
     for (var i=0;i<rows.length;i++){
       var r = rows[i];
-      var type = r.destType || 'External';
-      var id   = _norm(r.destId);
+      var type = r.destType || 'External';             // <- from Treatment
+      var id   = _norm(r.destId);                      // <- extension, if any
       var name = _norm(r.destName);
-      var keyPart = (id ? ('id:'+id) : ('name:'+_normKey(name)));
+
+      var keyPart = id ? ('id:'+id) : ('name:'+_normKey(name));
       var key = type + '|' + keyPart;
 
       if (!map[key]) map[key] = { key, type, id, name, numbers: [] };
@@ -760,57 +727,52 @@ function mapDestType(t, name){
     return out;
   }
 
-  /* ---------- virtual list ---------- */
-  /* ---------- virtual list ---------- */
-function mountVirtualList(container, items, rowH, right) {
-  container.innerHTML = '';
-  container.className  = 'rows';
+  /* ---------- virtual list (number left, description right) ---------- */
+  function mountVirtualList(container, items, rowH, right) {
+    container.innerHTML = '';
+    container.className  = 'rows';
 
-  var pad = make('div','vpad');
-  pad.style.height = (items.length * rowH) + 'px';
+    var pad = make('div','vpad');
+    pad.style.height = (items.length * rowH) + 'px';
 
-  var rows = make('div');
-  rows.style.position = 'absolute';
-  rows.style.left = 0; rows.style.right = 0; rows.style.top = 0;
+    var rows = make('div');
+    rows.style.position = 'absolute';
+    rows.style.left = 0; rows.style.right = 0; rows.style.top = 0;
 
-  container.appendChild(pad);
-  container.appendChild(rows);
+    container.appendChild(pad);
+    container.appendChild(rows);
 
-  function rightTextOf(it, i){
-    if (typeof right === 'function') return right(it, i) || '';
-    if (right === true)              return it.label || '';
-    return right || '';
-  }
-
-  function draw(){
-    var top = container.scrollTop, h = container.clientHeight;
-    var start = Math.max(0, Math.floor(top / rowH) - 4);
-    var end   = Math.min(items.length, start + Math.ceil(h / rowH) + 8);
-
-    rows.style.transform = 'translateY(' + (start * rowH) + 'px)';
-    rows.innerHTML = '';
-
-    for (var i = start; i < end; i++){
-      var it  = items[i];
-      var row = make('div','row');
-
-      // LEFT: number only
-      row.appendChild(make('div','row-left','<div class="row-num">'+ it.number +'</div>'));
-
-      // RIGHT: description/label
-      var rt = rightTextOf(it, i);
-      if (rt) row.appendChild(make('div','muted row-right', rt));
-
-      rows.appendChild(row);
+    function rightTextOf(it, i){
+      if (typeof right === 'function') return right(it, i) || '';
+      if (right === true)              return it.label || '';
+      return right || '';
     }
+
+    function draw(){
+      var top = container.scrollTop, h = container.clientHeight;
+      var start = Math.max(0, Math.floor(top / rowH) - 4);
+      var end   = Math.min(items.length, start + Math.ceil(h / rowH) + 8);
+
+      rows.style.transform = 'translateY(' + (start * rowH) + 'px)';
+      rows.innerHTML = '';
+
+      for (var i = start; i < end; i++){
+        var it  = items[i];
+        var row = make('div','row');
+
+        row.appendChild(make('div','row-left','<div class="row-num">'+ it.number +'</div>'));
+
+        var rt = rightTextOf(it, i);
+        if (rt) row.appendChild(make('div','muted row-right', rt));
+
+        rows.appendChild(row);
+      }
+    }
+
+    container.addEventListener('scroll', draw);
+    draw();
+    return { redraw: draw };
   }
-
-  container.addEventListener('scroll', draw);
-  draw();
-  return { redraw: draw };
-}
-
-
 
   /* ---------- mount UI (left column with expand) ---------- */
   function cvIntelliRoutingMount(root){
@@ -834,6 +796,7 @@ function mountVirtualList(container, items, rowH, right) {
       + '</div>';
       root.appendChild(wrap);
 
+      /* optional drawer kept for future use */
       var drawer=document.getElementById('ir-drawer');
       if(!drawer){
         drawer=document.createElement('div');
@@ -891,12 +854,10 @@ function mountVirtualList(container, items, rowH, right) {
           acts.appendChild(exportBtn);
           body.appendChild(acts);
 
-          // mini list (no #ext on right — destination is already in the title)
+          /* mini list: number left, destination/description right */
           var rowsHost = make('div','rows');
           body.appendChild(rowsHost);
-          // Put the destination/description on the right
           mountVirtualList(rowsHost, g.numbers, 32, function(it){ return it.label || ''; });
-
         }
 
         card.appendChild(body);
@@ -956,4 +917,3 @@ function mountVirtualList(container, items, rowH, right) {
   }
   window.cvIntelliRoutingMount = cvIntelliRoutingMount;
 })();
-
