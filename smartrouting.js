@@ -335,7 +335,7 @@
 })();
 
 /* ===================== Intelli Routing — COMPLETE DROP-IN (compact + drawer) ===================== */
-<!-- ===================== Intelli Routing — COMPLETE DROP-IN (compact + drawer) ===================== -->
+
 
 ;(function(){
   "use strict";
@@ -395,35 +395,54 @@
   }
 
   /* ---------- Auto Attendants index (portal/attendants) — cached, no timeouts ---------- */
-/* ---------- Auto Attendant index ---------- */
+/* ---------- Auto Attendants index (robust) ---------- */
+var __AA_CACHE = __AA_CACHE || null;
 async function loadAAIndex(){
-  try {
-    const res = await fetch('/portal/attendants');
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const html = await res.text();
-    const div = document.createElement('div');
-    div.innerHTML = html;
+  if (__AA_CACHE && (Date.now() - __AA_CACHE.t < 5*60*1000)) return __AA_CACHE.set;
 
-    const aaSet = new Set();
+  return new Promise(function(resolve){
+    try{
+      var frame = document.getElementById('cv-intelli-aa');
+      if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
 
-    // Look through each row in the attendants list
-    div.querySelectorAll('tr').forEach(row => {
-      const cells = row.querySelectorAll('td');
-      if (cells.length === 0) return;
+      frame = document.createElement('iframe');
+      frame.id = 'cv-intelli-aa';
+      frame.src = '/portal/attendants';
+      Object.assign(frame.style, {
+        position:'fixed', left:'-9999px', top:'-9999px', width:'1px', height:'1px', opacity:'0'
+      });
+      frame.setAttribute('aria-hidden','true');
+      document.body.appendChild(frame);
 
-      // Try to find a numeric extension
-      const txt = row.textContent || '';
-      const match = txt.match(/\b\d{3,4}\b/);
-      if (match) {
-        aaSet.add(match[0]);
-      }
-    });
+      frame.onload = function(){
+        try{
+          var doc  = frame.contentWindow.document;
+          var rows = [].slice.call(doc.querySelectorAll('table tr, .list tbody tr, .table tr'));
+          var set  = new Set();
 
-    return aaSet;
-  } catch (e) {
-    console.error('loadAAIndex failed:', e);
-    return new Set();
-  }
+          rows.forEach(function(tr){
+            // Try a likely "extension" cell first, then fall back to the whole row text
+            var extCell = tr.querySelector('[data-col="extension"], .col-extension') || tr.querySelector('td:nth-child(2)');
+            var candidates = [];
+            if (extCell) candidates.push(extCell.textContent || '');
+            candidates.push(tr.textContent || '');
+
+            for (var i=0;i<candidates.length;i++){
+              var m = String(candidates[i]||'').match(/\b(\d{2,6})\b/); // accept 2–6 digit exts
+              if (m) { set.add(m[1]); break; }
+            }
+          });
+
+          __AA_CACHE = { t: Date.now(), set: set };
+          if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+          resolve(set);
+        }catch(_){
+          if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+          resolve(new Set()); // never block the main flow
+        }
+      };
+    }catch(_){ resolve(new Set()); }
+  });
 }
 
 
@@ -942,11 +961,8 @@ async function loadAAIndex(){
         var aaSet = await loadAAIndex();
 
         rows.forEach(function(r){
-          if (r && r.destType === 'User') {
-            var ext = r.destId || extFromDestination(r.destName || r.label);
-            if (ext && aaSet.has(ext)) r.destType = 'AA';
-          }
-          r.label = buildDisplayLabel(r);
+          var ext = r && (r.destId || extFromDestination(r.destName || r.label));
+          if (ext && aaSet.has(ext)) r.destType = 'AA';
         });
 
         groups = groupByDestination(rows || []);
