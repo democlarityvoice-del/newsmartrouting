@@ -775,154 +775,131 @@
 
 
   /* ---------- mount UI (left column with expand) ---------- */
-  function cvIntelliRoutingMount(root){
-    try{
-      root.innerHTML='';
-      var wrap=make('div','ir');
-      wrap.innerHTML =
-        '<div class="ir-left">'
-      +   '<div class="ir-h1">Destinations</div>'
-      +   '<input id="ir-q" class="ir-search" placeholder="Search destination or number…"/>'
-      +   '<div class="ir-filters">'
-      +     '<span data-ft="all" class="chip active">All</span>'
-      +     '<span data-ft="User" class="chip">User</span>'
-      +     '<span data-ft="Queue" class="chip">Queue</span>'
-      +     '<span data-ft="AA" class="chip">Auto Attendant</span>'
-      +     '<span data-ft="External" class="chip">External</span>'
-      +     '<span data-ft="VM" class="chip">Voicemail</span>'
-      +   '</div>'
-      +   '<div class="list-outer"><div id="ir-groups"></div></div>'
-      +   '<div id="ir-count" class="muted" style="margin-top:6px"></div>'
-      + '</div>';
-      root.appendChild(wrap);
+/* ---------- mount UI (left column with expand) ---------- */
+function cvIntelliRoutingMount(root){
+  try{
+    root.innerHTML='';
+    var wrap=make('div','ir');
+    wrap.innerHTML =
+      '<div class="ir-left">'
+    +   '<div class="ir-h1">Destinations</div>'
+    +   '<input id="ir-q" class="ir-search" placeholder="Search destination or number…"/>'
+    +   '<div class="ir-filters">'
+    +     '<span data-ft="all" class="chip active">All</span>'
+    +     '<span data-ft="User" class="chip">User</span>'
+    +     '<span data-ft="Queue" class="chip">Queue</span>'
+    +     '<span data-ft="AA" class="chip">Auto Attendant</span>'
+    +     '<span data-ft="External" class="chip">External</span>'
+    +     '<span data-ft="VM" class="chip">Voicemail</span>'
+    +   '</div>'
+    +   '<div class="list-outer"><div id="ir-groups"></div></div>'
+    +   '<div id="ir-count" class="muted" style="margin-top:6px"></div>'
+    + '</div>';
+    root.appendChild(wrap);
 
-      /* (optional) preview drawer scaffold kept for future */
-      var drawer=document.getElementById('ir-drawer');
-      if(!drawer){
-        drawer=document.createElement('div');
-        drawer.id='ir-drawer'; drawer.className='drawer';
-        drawer.innerHTML='<div class="drawer-h"><div id="ir-drawer-title">Preview</div><button class="drawer-x" title="Close">×</button></div><div class="drawer-b" id="ir-drawer-body"></div>';
-        root.appendChild(drawer);
-        drawer.querySelector('.drawer-x').addEventListener('click', function(){ drawer.classList.remove('open'); });
-      }
+    // (optional) preview drawer scaffold
+    var drawer=document.getElementById('ir-drawer');
+    if(!drawer){
+      drawer=document.createElement('div');
+      drawer.id='ir-drawer'; drawer.className='drawer';
+      drawer.innerHTML='<div class="drawer-h"><div id="ir-drawer-title">Preview</div><button class="drawer-x" title="Close">×</button></div><div class="drawer-b" id="ir-drawer-body"></div>';
+      root.appendChild(drawer);
+      drawer.querySelector('.drawer-x').addEventListener('click', function(){ drawer.classList.remove('open'); });
+    }
 
-      var groups=[], viewGroups=[], openKey=null;
+    var groups=[], viewGroups=[], openKey=null;
 
-      function titleFor(g){
-        return (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
-      }
+    function titleFor(g){
+      return (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
+    }
 
-      function renderCard(g){
-  var title  = titleFor(g);
-  var isOpen = (openKey === g.key);
+    function renderCard(g){
+      var title  = titleFor(g);
+      var isOpen = (openKey === g.key);
 
-  var card = make('div','card'); card.appendChild(make('div','left-bar'));
-  var hdr  = make('div','card-h');
+      var card = make('div','card');
+      card.appendChild(make('div','left-bar'));
 
-  var left = make('div','hdr-left');
-  left.appendChild(make('div','card-title', title));
-  left.appendChild(make('span','dest-badge', g.type));
-  hdr.appendChild(left);
+      var hdr  = make('div','card-h');
 
-  var right = make('div','hdr-right');
-  right.appendChild(make('span','count-badge', g.count + ' number' + (g.count===1?'':'s')));
-  var btn = make('button','btn', isOpen ? 'Collapse' : 'Expand');
-  right.appendChild(btn);
-  hdr.appendChild(right);
-  card.appendChild(hdr);
+      var left = make('div','hdr-left');
+      left.appendChild(make('div','card-title', title));
+      left.appendChild(make('span','dest-badge', g.type));
+      hdr.appendChild(left);
 
-  var body = make('div','card-b');
-  if (isOpen){
-    card.classList.add('open');
+      var right = make('div','hdr-right');
+      right.appendChild(make('span','count-badge', g.count + ' number' + (g.count===1?'':'s')));
+      var btn = make('button','btn', isOpen ? 'Collapse' : 'Expand');
+      right.appendChild(btn);
+      hdr.appendChild(right);
 
-    // Export CSV for just this destination (Number,Destination)
-    var acts = make('div','card-actions');
-    var exportBtn = make('button','btn','Export CSV');
-    exportBtn.onclick = function(){
-      var dest = (title || '').replace(/"/g,'""');
-      var csv  = 'Number,Destination\n';
-      for (var i=0;i<g.numbers.length;i++){
-        csv += '"' + g.numbers[i].number + '","' + dest + '"\n';
-      }
-      var blob = new Blob([csv], {type:'text/csv'});
-      var url  = URL.createObjectURL(blob);
-      var a    = document.createElement('a');
-      a.href = url;
-      a.download = (g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_');
-      a.click();
-      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
-    };
-    acts.appendChild(exportBtn);
-    body.appendChild(acts);
+      card.appendChild(hdr);
 
-    // mini list (no #ext on right)
-    var rowsHost = make('div','rows');
-    body.appendChild(rowsHost);
-    mountVirtualList(rowsHost, g.numbers, 32, null);
-  } // ← missing brace fixed
+      var body = make('div','card-b');
+      if (isOpen){
+        card.classList.add('open');
 
-  card.appendChild(body);
-
-  btn.onclick = function(){ openKey = isOpen ? null : g.key; renderGroups(); };
-  return card;
-}
-
-
-          /* Export CSV for just this destination (Number,Destination) */
-          var acts = make('div','card-actions');
-          var exportBtn = make('button','btn','Export CSV');
-          exportBtn.onclick = function(){
-            var dest = (title || '').replace(/"/g,'""');
-            var csv  = 'Number,Destination\n';
-            for (var i=0;i<g.numbers.length;i++){
-              csv += '"' + g.numbers[i].number + '","' + dest + '"\n';
-            }
-            var blob = new Blob([csv], {type:'text/csv'});
-            var url  = URL.createObjectURL(blob);
-            var a    = document.createElement('a');
-            a.href = url;
-            a.download = (g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_');
-            a.click();
-            setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
-          };
-          acts.appendChild(exportBtn);
-          body.appendChild(acts);
-
-          /* mini list */
-          var rowsHost = make('div','rows');
-          body.appendChild(rowsHost);
-        // no #ext on the right — destination is already shown in the title
-          mountVirtualList(rowsHost, g.numbers, 32, null);
-
-        card.appendChild(body);
-
-        btn.onclick = function(){ openKey = isOpen ? null : g.key; renderGroups(); };
-        return card;
-      }
-
-      function renderGroups(){
-        var host=document.getElementById('ir-groups'); host.innerHTML='';
-        for(var i=0;i<viewGroups.length;i++) host.appendChild(renderCard(viewGroups[i]));
-        document.getElementById('ir-count').textContent = viewGroups.length + ' destination group' + (viewGroups.length===1?'':'s');
-      }
-
-      function applyFilters(){
-        var term=_normKey(document.getElementById('ir-q').value||'');
-        var chips=document.querySelectorAll('#cv-intelli-root .chip'), i, type='all';
-        for(i=0;i<chips.length;i++){ if(chips[i].classList.contains('active')){ type=chips[i].getAttribute('data-ft')||'all'; break; } }
-        viewGroups=[];
-        for(i=0;i<groups.length;i++){
-          var g=groups[i]; if(type!=='all' && g.type!==type) continue;
-          var t = titleFor(g);
-          var match=!term || (t && _normKey(t).indexOf(term)>=0);
-          if(!match && /[0-9]/.test(term)){
-            for(var j=0;j<g.numbers.length;j++){ if(_normKey(g.numbers[j].number).indexOf(term)>=0){ match=true; break; } }
-            if(!match && g.id && _normKey(String(g.id)).indexOf(term)>=0) match=true;
+        // Export CSV for just this destination (Number,Destination)
+        var acts = make('div','card-actions');
+        var exportBtn = make('button','btn','Export CSV');
+        exportBtn.onclick = function(){
+          var dest = (title || '').replace(/"/g,'""');
+          var csv  = 'Number,Destination\n';
+          for (var i=0;i<g.numbers.length;i++){
+            csv += '"' + g.numbers[i].number + '","' + dest + '"\n';
           }
-          if(match) viewGroups.push(g);
-        }
-        renderGroups();
+          var blob = new Blob([csv], {type:'text/csv'});
+          var url  = URL.createObjectURL(blob);
+          var a    = document.createElement('a');
+          a.href = url;
+          a.download = (g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_');
+          a.click();
+          setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+        };
+        acts.appendChild(exportBtn);
+        body.appendChild(acts);
+
+        // mini list (no #ext on right)
+        var rowsHost = make('div','rows');
+        body.appendChild(rowsHost);
+        mountVirtualList(rowsHost, g.numbers, 32, null);
       }
+
+      card.appendChild(body);
+
+      btn.onclick = function(){ openKey = isOpen ? null : g.key; renderGroups(); };
+      return card;
+    }
+
+    function renderGroups(){
+      var host=document.getElementById('ir-groups');
+      host.innerHTML='';
+      for(var i=0;i<viewGroups.length;i++) host.appendChild(renderCard(viewGroups[i]));
+      document.getElementById('ir-count').textContent =
+        viewGroups.length + ' destination group' + (viewGroups.length===1?'':'s');
+    }
+
+    function applyFilters(){
+      var term=_normKey(document.getElementById('ir-q').value||'');
+      var chips=document.querySelectorAll('#cv-intelli-root .chip'), i, type='all';
+      for(i=0;i<chips.length;i++){
+        if(chips[i].classList.contains('active')){ type=chips[i].getAttribute('data-ft')||'all'; break; }
+      }
+      viewGroups=[];
+      for(i=0;i<groups.length;i++){
+        var g=groups[i]; if(type!=='all' && g.type!==type) continue;
+        var t = titleFor(g);
+        var match=!term || (t && _normKey(t).indexOf(term)>=0);
+        if(!match && /[0-9]/.test(term)){
+          for(var j=0;j<g.numbers.length;j++){
+            if(_normKey(g.numbers[j].number).indexOf(term)>=0){ match=true; break; }
+          }
+          if(!match && g.id && _normKey(String(g.id)).indexOf(term)>=0) match=true;
+        }
+        if(match) viewGroups.push(g);
+      }
+      renderGroups();
+    }
 
       /* events */
       document.getElementById('ir-q').addEventListener('input', applyFilters);
