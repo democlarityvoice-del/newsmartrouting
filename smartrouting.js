@@ -727,27 +727,60 @@
   }
 
   /* ---------- virtual list ---------- */
-  function mountVirtualList(container, items, rowH, rightLabel){
-    container.innerHTML=''; container.className='rows';
-    var pad=make('div','vpad'); pad.style.height=(items.length*rowH)+'px';
-    var rows=make('div'); rows.style.position='absolute'; rows.style.left=0; rows.style.right=0; rows.style.top=0;
-    container.appendChild(pad); container.appendChild(rows);
-    function draw(){
-      var top=container.scrollTop, h=container.clientHeight;
-      var start=Math.max(0, Math.floor(top/rowH)-4);
-      var end=Math.min(items.length, start+Math.ceil(h/rowH)+8);
-      rows.style.transform='translateY('+(start*rowH)+'px)'; rows.innerHTML='';
-      for(var i=start;i<end;i++){
-        var it=items[i], row=make('div','row');
-        var left=make('div',null,'<div class="row-num">'+it.number+'</div>'+(it.label?'<div class="muted">'+it.label+'</div>':'')); // label under TN
-        var right=make('div','muted', rightLabel || '');
-        row.appendChild(left); row.appendChild(right); rows.appendChild(row);
+/* ===================== Virtual list helper (rows) ===================== */
+/* Replaces your current mountVirtualList so the right column only
+   renders if a label is provided. Passing '' or null hides it. */
+function mountVirtualList(container, items, rowH, rightLabel){
+  container.innerHTML=''; 
+  container.className='rows';
+
+  var pad = make('div','vpad');
+  pad.style.height = (items.length * rowH) + 'px';
+
+  var rows = make('div');
+  rows.style.position = 'absolute';
+  rows.style.left = 0; rows.style.right = 0; rows.style.top = 0;
+
+  container.appendChild(pad);
+  container.appendChild(rows);
+
+  function draw(){
+    var top = container.scrollTop, h = container.clientHeight;
+    var start = Math.max(0, Math.floor(top / rowH) - 4);
+    var end = Math.min(items.length, start + Math.ceil(h / rowH) + 8);
+
+    rows.style.transform = 'translateY(' + (start * rowH) + 'px)';
+    rows.innerHTML = '';
+
+    for (var i = start; i < end; i++){
+      var it = items[i];
+      var row = make('div','row');
+
+      var left = make(
+        'div',
+        null,
+        '<div class="row-num">' + it.number + '</div>' +
+        (it.label ? '<div class="muted">' + it.label + '</div>' : '')
+      );
+      row.appendChild(left);
+
+      // Only render the right cell if a label was provided
+      if (rightLabel){
+        var right = make('div','muted', rightLabel);
+        row.appendChild(right);
       }
+
+      rows.appendChild(row);
     }
-    container.addEventListener('scroll', draw); draw(); return { redraw: draw };
   }
 
-  /* ---------- mount UI (left column with expand) ---------- */
+  container.addEventListener('scroll', draw);
+  draw();
+  return { redraw: draw };
+}
+
+
+  /* ---------- mount APP UI (left column with expand) ---------- */
   function cvIntelliRoutingMount(root){
     try{
       root.innerHTML='';
@@ -785,28 +818,103 @@
         return (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
       }
 
-      function renderCard(g){
-        var title  = titleFor(g);
-        var isOpen = (openKey === g.key);
+     /* ===================== MOUNT APP (compact) — updated parts ===================== */
+/* Drop these two functions in your MOUNT APP section to remove the right label
+   in both the inline expand list and the Preview drawer. */
 
-        var card = make('div','card'); card.appendChild(make('div','left-bar'));
-        var hdr  = make('div','card-h');
+function renderCard(g){
+  var title  = (g.type === 'User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name || g.type);
+  var isOpen = (openKey === g.key);
 
-        var left = make('div','hdr-left');
-        left.appendChild(make('div','card-title', title));
-        left.appendChild(make('span','dest-badge', g.type));
-        hdr.appendChild(left);
+  var card = make('div','card'); card.appendChild(make('div','left-bar'));
 
-        var right = make('div','hdr-right');
-        right.appendChild(make('span','count-badge', g.count + ' number' + (g.count===1?'':'s')));
-        var btn = make('button','btn', isOpen ? 'Collapse' : 'Expand');
-        right.appendChild(btn);
-        hdr.appendChild(right);
-        card.appendChild(hdr);
+  var hdr  = make('div','card-h');
+  var left = make('div','hdr-left');
+  left.appendChild(make('div','card-title', title));
+  left.appendChild(make('span','dest-badge', g.type));
+  hdr.appendChild(left);
 
-        var body = make('div','card-b');
-        if (isOpen){
-          card.classList.add('open');
+  var right = make('div','hdr-right');
+  right.appendChild(make('span','count-badge', g.count + ' number' + (g.count===1?'':'s')));
+  var btn = make('button','btn', isOpen ? 'Collapse' : 'Expand');
+  right.appendChild(btn);
+  hdr.appendChild(right);
+  card.appendChild(hdr);
+
+  var body = make('div','card-b');
+  if (isOpen){
+    card.classList.add('open');
+
+    // actions (Export CSV for this destination only)
+    var acts = make('div','card-actions');
+    var exportBtn = make('button','btn','Export CSV');
+    exportBtn.onclick = function(){
+      var csv = 'Number,Label\n', i, n, lbl;
+      for(i=0;i<g.numbers.length;i++){
+        n=g.numbers[i]; lbl=(n.label||'').replace(/"/g,'""');
+        csv += '"' + n.number + '","' + lbl + '"\n';
+      }
+      var blob = new Blob([csv], {type:'text/csv'});
+      var url  = URL.createObjectURL(blob);
+      var a    = document.createElement('a');
+      a.href = url;
+      a.download = (g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_');
+      a.click();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    };
+    acts.appendChild(exportBtn);
+    body.appendChild(acts);
+
+    // mini, scrollable list of numbers — NO right label passed
+    var rowsHost = make('div','rows');
+    body.appendChild(rowsHost);
+    mountVirtualList(rowsHost, g.numbers, 32, null);
+  }
+  card.appendChild(body);
+
+  btn.onclick = function(){
+    openKey = isOpen ? null : g.key;
+    renderGroups(); // re-render to toggle
+  };
+
+  return card;
+}
+
+function openDrawerForGroup(g){
+  var title = (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
+  document.getElementById('ir-drawer-title').textContent = title + ' — ' + g.type;
+
+  var body = document.getElementById('ir-drawer-body');
+  body.innerHTML = '';
+
+  var actions = make('div', null);
+  var exportBtn = make('button','btn','Export CSV');
+  exportBtn.style.marginBottom = '10px';
+  exportBtn.onclick = function(){
+    var csv='Number,Label\n', i, n, lbl;
+    for(i=0;i<g.numbers.length;i++){
+      n=g.numbers[i]; lbl=(n.label||'').replace(/"/g,'""');
+      csv+='"'+n.number+'","'+lbl+'"\n';
+    }
+    var blob=new Blob([csv],{type:'text/csv'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');
+    a.href=url;
+    a.download=(g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_');
+    a.click();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  };
+  actions.appendChild(exportBtn);
+  body.appendChild(actions);
+
+  // drawer list — NO right label passed
+  var rows = make('div');
+  body.appendChild(rows);
+  mountVirtualList(rows, g.numbers, 34, null);
+
+  document.getElementById('ir-drawer').classList.add('open');
+}
+
 
           /* Export CSV for just this destination (Number,Destination) */
           var acts = make('div','card-actions');
