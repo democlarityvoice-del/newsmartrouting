@@ -170,6 +170,9 @@
       '#cv-intelli-root .count-badge{font-size:11px; background:var(--cv-tint); color:#4a2a00; border:1px solid var(--cv-accent); border-radius:999px; padding:1px 7px; white-space:nowrap}',
       '#cv-intelli-root .dest-badge{font-size:11px; padding:1px 6px; border-radius:6px; background:var(--cv-tint); border:1px solid var(--cv-accent); white-space:nowrap}',
 
+      '#cv-intelli-root .row-left{flex:1; min-width:0}',
+      '#cv-intelli-root .row-right{flex:0 0 52%; max-width:52%; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}',
+
       /* expand/collapse body */
       '#cv-intelli-root .card-b{padding:8px 12px; display:none}',
       '#cv-intelli-root .card.open .card-b{display:block}',
@@ -746,50 +749,55 @@
   }
 
   /* ---------- virtual list ---------- */
-  function mountVirtualList(container, items, rowH, rightLabel){
-    container.innerHTML='';
-    container.className='rows';
+  function mountVirtualList(container, items, rowH, right) {
+  container.innerHTML = '';
+  container.className  = 'rows';
 
-    var pad = make('div','vpad');
-    pad.style.height = (items.length * rowH) + 'px';
+  var pad = make('div','vpad');
+  pad.style.height = (items.length * rowH) + 'px';
 
-    var rows = make('div');
-    rows.style.position = 'absolute';
-    rows.style.left = 0; rows.style.right = 0; rows.style.top = 0;
+  var rows = make('div');
+  rows.style.position = 'absolute';
+  rows.style.left = 0; rows.style.right = 0; rows.style.top = 0;
 
-    container.appendChild(pad);
-    container.appendChild(rows);
+  container.appendChild(pad);
+  container.appendChild(rows);
 
-    function draw(){
-      var top = container.scrollTop, h = container.clientHeight;
-      var start = Math.max(0, Math.floor(top / rowH) - 4);
-      var end = Math.min(items.length, start + Math.ceil(h / rowH) + 8);
-
-      rows.style.transform = 'translateY(' + (start * rowH) + 'px)';
-      rows.innerHTML = '';
-
-      for (var i = start; i < end; i++){
-        var it = items[i];
-        var row = make('div','row');
-
-        var left = make(
-          'div',
-          null,
-          '<div class="row-num">' + it.number + '</div>' +
-          (it.label ? '<div class="muted">' + it.label + '</div>' : '')
-        );
-        row.appendChild(left);
-
-        if (rightLabel) row.appendChild(make('div','muted', rightLabel)); // only if provided
-
-        rows.appendChild(row);
-      }
-    }
-
-    container.addEventListener('scroll', draw);
-    draw();
-    return { redraw: draw };
+  function rightTextOf(it, i){
+    if (typeof right === 'function') return right(it, i) || '';
+    if (right === true)              return it.label || '';
+    return right || '';
   }
+
+  function draw(){
+    var top = container.scrollTop, h = container.clientHeight;
+    var start = Math.max(0, Math.floor(top / rowH) - 4);
+    var end   = Math.min(items.length, start + Math.ceil(h / rowH) + 8);
+
+    rows.style.transform = 'translateY(' + (start * rowH) + 'px)';
+    rows.innerHTML = '';
+
+    for (var i = start; i < end; i++){
+      var it  = items[i];
+      var row = make('div','row');
+
+      // LEFT: number only
+      var left = make('div','row-left','<div class="row-num">'+ it.number +'</div>');
+      row.appendChild(left);
+
+      // RIGHT: per-row text (description/label)
+      var rt = rightTextOf(it, i);
+      if (rt) row.appendChild(make('div','muted row-right', rt));
+
+      rows.appendChild(row);
+    }
+  }
+
+  container.addEventListener('scroll', draw);
+  draw();
+  return { redraw: draw };
+}
+
 
   /* ---------- mount UI (left column with expand) ---------- */
   function cvIntelliRoutingMount(root){
@@ -873,7 +881,9 @@
           // mini list (no #ext on right — destination is already in the title)
           var rowsHost = make('div','rows');
           body.appendChild(rowsHost);
-          mountVirtualList(rowsHost, g.numbers, 32, null);
+          // Put the destination/description on the right
+          mountVirtualList(rowsHost, g.numbers, 32, function(it){ return it.label || ''; });
+
         }
 
         card.appendChild(body);
