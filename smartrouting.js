@@ -170,15 +170,14 @@
       '#cv-intelli-root .count-badge{font-size:11px; background:var(--cv-tint); color:#4a2a00; border:1px solid var(--cv-accent); border-radius:999px; padding:1px 7px; white-space:nowrap}',
       '#cv-intelli-root .dest-badge{font-size:11px; padding:1px 6px; border-radius:6px; background:var(--cv-tint); border:1px solid var(--cv-accent); white-space:nowrap}',
 
-      /* rows (left number, right description) */
+      
+      /* mini scroller for numbers */
       '#cv-intelli-root .rows{position:relative; max-height:180px; overflow:auto; border:1px solid #eee; border-radius:8px; background:#fff}',
       '#cv-intelli-root .vpad{height:0}',
-      '#cv-intelli-root .row{display:flex; align-items:center; justify-content:space-between; height:32px; padding:0 10px; border-bottom:1px solid #f6f6f6; font-variant-numeric:tabular-nums}',
+      '#cv-intelli-root .row{display:flex; align-items:center; justify-content:space-between; height:32px; padding:0 10px; border-bottom:1px solid #f6f6f6}',
       '#cv-intelli-root .row:hover{background:#fff7f2}',
-      '#cv-intelli-root .row-left{flex:1; min-width:0}',
-      '#cv-intelli-root .row-right{flex:0 0 52%; max-width:52%; text-align:right; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; display:block!important}',
-      '#cv-intelli-root .row-num{font-variant-numeric:tabular-nums}',
-      '#cv-intelli-root .muted{color:#666; font-size:12px}',
+      '#cv-intelli-root .row-num{font-feature-settings:"tnum" 1; font-variant-numeric:tabular-nums; letter-spacing:.2px}',
+
 
       /* buttons */
       '#cv-intelli-root .btn{cursor:pointer; border:none; background:var(--cv-accent); color:#fff; padding:7px 10px; border-radius:9px; line-height:1; font-weight:600; font-size:12px}',
@@ -393,69 +392,72 @@
          : 'External';
   }
 
-  /* ---------- attendants scraper (truth for AA) ---------- */
-  async function loadAutoAttendants(){
-    // cache ~5 minutes
-    if (window.__cvAAMapCache && (Date.now() - window.__cvAAMapCache.t < 5*60*1000)) {
-      return window.__cvAAMapCache.map;
+  /* === Auto Attendants index (portal/attendants) — no timeout, cached === */
+function extFromDestination(s){
+  var m = String(s || '').match(/\b(\d{3,6})\b/);
+  return m ? m[1] : '';
+}
+var __AA_CACHE = null;
+async function loadAAIndex(){
+  if (__AA_CACHE && (Date.now() - __AA_CACHE.t < 5*60*1000)) return __AA_CACHE.set;
+
+  return new Promise(function(resolve){
+    try{
+      var frame = document.getElementById('cv-intelli-aa');
+      if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+
+      frame = document.createElement('iframe');
+      frame.id = 'cv-intelli-aa';
+      frame.src = '/portal/attendants';
+      Object.assign(frame.style, { position:'fixed', left:'-9999px', top:'-9999px', width:'1px', height:'1px', opacity:'0' });
+      frame.setAttribute('aria-hidden','true');
+      document.body.appendChild(frame);
+
+      frame.onload = function(){
+        try{
+          var doc  = frame.contentWindow.document;
+          // Very forgiving: grab any table-ish rows; ext is the 2nd cell or any 3–6 digit token
+          var rows = [].slice.call(doc.querySelectorAll('table tr, .list tbody tr, .table tr'));
+          var set  = new Set();
+          rows.forEach(function(tr){
+            var tds = tr.querySelectorAll ? tr.querySelectorAll('td,th') : [];
+            if (tds.length < 2) return;
+            var raw = (tds[1].textContent || '').trim();
+            var m   = raw.match(/\b(\d{3,6})\b/);
+            if (m) set.add(m[1]);
+          });
+          __AA_CACHE = { t: Date.now(), set: set };
+          if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+          resolve(set);
+        }catch(_){
+          if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+          // Never fail the main flow just because AA list couldn’t be read
+          resolve(new Set());
+        }
+      };
+    }catch(_){
+      resolve(new Set());
     }
-    return new Promise(function(resolve, reject){
-      try{
-        var frame=document.getElementById('cv-intelli-aa-frame');
-        if(frame && frame.parentNode) frame.parentNode.removeChild(frame);
-        frame=document.createElement('iframe');
-        frame.id='cv-intelli-aa-frame';
-        frame.src='/portal/attendants';
-        frame.setAttribute('aria-hidden','true');
-        Object.assign(frame.style, { position:'fixed', left:'-9999px', top:'-9999px', width:'1px', height:'1px', opacity:'0' });
-        document.body.appendChild(frame);
+  });
+}
 
-        var done=false, to=setTimeout(function(){ if(done) return; done=true; cleanup(); reject(new Error('AA page timed out')); }, 30000);
-        function cleanup(){ clearTimeout(to); if(frame && frame.parentNode) frame.parentNode.removeChild(frame); }
-
-        frame.onload=function(){
-          try{
-            var doc=frame.contentWindow.document;
-            var tables = doc.querySelectorAll('#content table, #content .table, table');
-            var picked=null, nameIdx=0, extIdx=1;
-
-            // pick a table whose headers look like Name/Extension; fallback to first table
-            for(var i=0;i<tables.length;i++){
-              var ths=[].map.call(tables[i].querySelectorAll('thead th'), function(th){ return _normKey(th.textContent); });
-              if(ths.length){
-                var ni=ths.findIndex(x=>/name/.test(x)), ei=ths.findIndex(x=>/ext/i.test(x));
-                if(ni>=0 && ei>=0){ picked=tables[i]; nameIdx=ni; extIdx=ei; break; }
-              }
-            }
-            if(!picked) picked=tables[0];
-            if(!picked){ done=true; cleanup(); return resolve({ byExt:Object.create(null) }); }
-
-            // guess columns if no thead
-            if(picked && !picked.querySelector('thead')){
-              // screenshot shows Name, Extension, Timeframe
-              nameIdx=0; extIdx=1;
-            }
-
-            var rows=picked.querySelectorAll('tbody tr, tr');
-            var byExt=Object.create(null);
-            for(var r=0;r<rows.length;r++){
-              var tds=rows[r].querySelectorAll('td,th'); if(!tds || tds.length<2) continue;
-              var nm=_norm(tds[nameIdx] ? tds[nameIdx].textContent : '');
-              var ex=_norm(tds[extIdx]  ? tds[extIdx].textContent  : '');
-              ex=ex.replace(/[^\d]/g,'');
-              if(!ex || !/^\d{3,6}$/.test(ex) || !nm) continue;
-              byExt[ex]=nm;
-            }
-            done=true; cleanup();
-            var map={ byExt: byExt };
-            window.__cvAAMapCache = { t: Date.now(), map: map };
-            resolve(map);
-          }catch(e){ if(done) return; done=true; cleanup(); reject(e); }
-        };
-      }catch(ex){ reject(ex); }
-    });
+/* Display label helper: "Treatment Name + Destination Name" (except Available Number) */
+function prettyType(t){
+  if (t === 'AA') return 'Auto Attendant';
+  if (t === 'VM') return 'Voicemail';
+  return t || '';
+}
+function buildDisplayLabel(row){
+  // Available Number stays as-is if already marked that way
+  if (/available number/i.test(row.destName) || /available number/i.test(row.label)) {
+    return 'Available Number';
   }
+  var t = prettyType(row.destType);
+  var n = (row.destName || row.label || '').trim();
+  return (t && n) ? (t + ' ' + n) : (n || t);
+}
 
+ 
   /* ---------- CSV → rows ---------- */
   function parseCSV(text) {
     text = String(text || '');
@@ -650,82 +652,37 @@
     });
   }
 
-  async function loadInventory(){
-    if (window.__cvIntelliNumCache && (Date.now() - window.__cvIntelliNumCache.t < 5*60*1000)) {
-      return window.__cvIntelliNumCache.rows.slice();
+// BEGIN REPLACE: inventory load + AA merge
+loadInventory().then(async function(rows){
+  // Pull AA extensions once; cached & fail-safe
+  var aaSet = await loadAAIndex();
+
+  // Re-type AAs that the CSV mislabeled as User, based on extension match
+  rows.forEach(function(r){
+    if (r && r.destType === 'User') {
+      var ext = r.destId || extFromDestination(r.destName || r.label);
+      if (ext && aaSet.has(ext)) r.destType = 'AA';
     }
-    if (__cvInvPromise) return __cvInvPromise;
+    // Build final display label: "Treatment Name + Destination Name"
+    r.label = buildDisplayLabel(r);
+  });
 
-    __cvInvPromise = (async () => {
-      if ((window.cvIntelliPreferMode || 'export') !== 'api') {
-        try {
-          const rows = await loadInventoryViaExport();
-          if (rows && rows.length) return rows;
-        } catch (e) {
-          log('Export CSV failed — falling back:', e && e.message ? e.message : e);
-        }
-      }
+  groups = groupByDestination(rows || []);
+  try { window.__cvUserDir = await loadUserDirectory(); } catch(e){ log('user names not resolved:', e && e.message ? e.message : e); }
+  applyFilters();
+}).catch(function(err){
+  var msg='<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
+    + '<div style="font-weight:600; margin-bottom:6px;">Could not load phone number inventory</div>'
+    + '<div style="margin-bottom:6px;">' + (err && err.message ? err.message : err) + '</div>'
+    + '<div style="font-size:12px;">If your environment requires fixed endpoints:<br>'
+    + '<code>window.cvIntelliNumbersUrl = "/exact/numbers/path";</code><br>'
+    + '<code>window.cvIntelliUsersUrl   = "/exact/users/path";</code><br>then click the tile again.</div>'
+    + '</div>';
+  root.innerHTML = msg;
+});
+// END REPLACE
 
-      try {
-        const base = await probeNumbersUrl();
-        const raw  = await fetchJSON(addParam(base, 'limit', '5000'));
-        const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
-        if (!Array.isArray(list) || !list.length) throw new Error('Endpoint returned no items: '+base);
-        const rows = list.map(function(x,i){
-          const typeRaw = x.treatment || x.dest_type || x.owner_type || x.type || x.destination_type;
-          const nameRaw = x.dest_name || x.owner_name || x.destination_name || x.destination || x.notes || '';
-          const type    = mapDestTypeFromTreatment(typeRaw, nameRaw);
-          const idRaw   = x.owner_ext || x.ext || x.dest_id || x.owner_id || x.destination_id || extFromDestination(nameRaw);
-          return {
-            id:       x.id || x.uuid || ('num'+i),
-            number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
-            label:    x.label || x.alias || _norm(nameRaw),
-            treatment: typeRaw || '',
-            destType: type,
-            destId:   String(idRaw || ''),
-            destName: _norm(nameRaw)
-          };
-        });
-        window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() };
-        return rows;
-      } catch(apiErr){
-        log('API numbers failed — falling back to iframe scrape:', apiErr && apiErr.message ? apiErr.message : apiErr);
-      }
 
-      return await scrapeInventoryViaIframe();
-    })().finally(function(){ __cvInvPromise = null; });
-
-    return __cvInvPromise;
-  }
-
-  /* ---------- display label builder ---------- */
-  function buildDisplayLabel(row){
-    // Special case: Available Number (don’t append a destination)
-    if (/^available number/i.test(_norm(row.treatment))) return 'Available Number';
-    var title = typeTitle(row.destType);
-    var dest  = _norm(row.destName);
-    if (!dest && row.destId) dest = row.destId;
-    return dest ? (title + ' ' + dest) : title;
-  }
-
-  /* ---------- grouping ---------- */
-  function groupByDestination(rows){
-    var map = Object.create(null), out = [];
-    for (var i=0;i<rows.length;i++){
-      var r = rows[i];
-      var type = r.destType || 'External';
-      var id   = _norm(r.destId);
-      var name = _norm(r.destName);
-      var keyPart = (id ? ('id:'+id) : ('name:'+_normKey(name)));
-      var key = type + '|' + keyPart;
-
-      if (!map[key]) map[key] = { key, type, id, name, numbers: [] };
-      map[key].numbers.push({ id:r.id, number:r.number, label:(r.display || r.label || r.destName || '') });
-    }
-    for (var k in map){ if (Object.prototype.hasOwnProperty.call(map,k)) { map[k].count = map[k].numbers.length; out.push(map[k]); } }
-    out.sort(function(a,b){ return b.count - a.count || (a.type > b.type ? 1 : -1) || (_normKey(a.name) > _normKey(b.name) ? 1 : -1); });
-    return out;
-  }
 
   /* ---------- virtual list ---------- */
   function mountVirtualList(container, items, rowH, right) {
