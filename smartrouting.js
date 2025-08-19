@@ -1,3 +1,5 @@
+<!-- ===================== Intelli Routing (compact/drop-in) ===================== -->
+
 // ===== Intelli Routing bootstrap (no scrolling) ===== iframe- fixed
 ;(function () {
   try {
@@ -92,11 +94,7 @@
 ;(function(){
   function findNavContainer(){
     var sels = [
-      '#nav-buttons',
-      'ul#nav-buttons',
-      '.nav-buttons',
-      'nav #nav-buttons',
-      '#navigation #nav-buttons'
+      '#nav-buttons','ul#nav-buttons','.nav-buttons','nav #nav-buttons','#navigation #nav-buttons'
     ];
     for (var i=0;i<sels.length;i++){
       var el = document.querySelector(sels[i]);
@@ -121,7 +119,6 @@
     a.id = 'nav-intelli-routing-link';
     a.href = '#';
     a.title = 'Intelli Routing';
-    // vanilla click handler (works even without jQuery)
     a.addEventListener('click', function(e){
       e.preventDefault();
       window.dispatchEvent(new CustomEvent('cv:intelli-routing:open'));
@@ -144,7 +141,6 @@
     console.log('Intelli Routing button inserted (fallback)');
   }
 
-  // run now, on DOM ready, and on any DOM mutation (SPA-safe)
   insertIfMissing();
   if (document.readyState==='loading') {
     document.addEventListener('DOMContentLoaded', insertIfMissing);
@@ -160,128 +156,55 @@
   function ensureStyle(){
     if (document.getElementById('cv-intelli-style')) return;
     var css = [
-      /* ROOT + LAYOUT */
       '#cv-intelli-root{display:none; --cv-accent:'+DEFAULT_ACCENT+'; --cv-tint:'+DEFAULT_TINT+';}',
       '#cv-intelli-root.dock{position:absolute; inset:0; z-index:9999}',
       '#cv-intelli-root.float{position:fixed; inset:0; z-index:999999}',
-      '#cv-intelli-root .cv-back{position:absolute; inset:0; background:#fff; opacity:1}',
+      '#cv-intelli-root .cv-back{position:absolute; inset:0; background:#fff; opacity:1}', /* solid backdrop */
+      '#cv-intelli-root .cv-panel{position:absolute; inset:0; background:#fff; box-sizing:border-box; font:13px/1.35 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}',
+      '#cv-intelli-root.float .cv-panel{margin:4% auto; max-width:1040px; height:auto; border-radius:12px; box-shadow:0 8px 40px rgba(0,0,0,.12)}',
+      /* HIDE the orange gradient header entirely (portal already shows grey title bar) */
+      '#cv-intelli-root .cv-h{display:none}',
+      '#cv-intelli-root .cv-b{padding:10px 12px; height:100%; overflow:auto}',
 
-      /* Panel: flex so body always scrolls; no gradient header */
-     '#cv-intelli-root .cv-panel{position:absolute; inset:0; background:#fff; box-sizing:border-box; font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; display:flex; flex-direction:column; overflow:hidden}',
-     '#cv-intelli-root.float .cv-panel{margin:4% auto; max-width:960px; height:auto; border-radius:12px; box-shadow:0 8px 40px rgba(0,0,0,.12)}',
-
-    /* Hide the big banner header (we’ll use a tiny floating close instead) */
-    '#cv-intelli-root .cv-h{display:none}',
-
-    /* Floating close */
-    '#cv-intelli-root .cv-x-float{position:absolute; top:8px; right:10px; z-index:2; cursor:pointer; background:#fff; border:1px solid #e5e5e5; width:28px; height:28px; border-radius:8px; font-size:18px; line-height:26px; text-align:center}',
-    '#cv-intelli-root .cv-x-float:hover{filter:brightness(.97)}',
-
-    /* Body must flex to bottom and scroll */
-    '#cv-intelli-root .cv-b{padding:12px 12px 14px; flex:1 1 auto; overflow:auto}',
-
-  /* ===== scoped UI (denser) ===== */
-  // floating close (since header is hidden)
-var panel = root.querySelector('.cv-panel');
-if (!panel.querySelector('.cv-x-float')) {
-  var x = document.createElement('button');
-  x.className = 'cv-x-float';
-  x.title = 'Close';
-  x.textContent = '×';
-  x.addEventListener('click', close);
-  panel.appendChild(x);
-}
-
-  '#cv-intelli-root .ir{display:flex; gap:12px; min-height:420px}',
-  '#cv-intelli-root .ir-left{width:320px; flex:0 0 320px}',
-  '#cv-intelli-root .ir-right{flex:1; min-width:0}',
-
-  '#cv-intelli-root .ir-h1{font-weight:600; margin:0 0 6px; font-size:13px; color:#444}',
-  '#cv-intelli-root .ir-search{width:100%; padding:7px 9px; border:1px solid #ddd; border-radius:10px}',
-  '#cv-intelli-root .ir-search:focus{outline:none; box-shadow:0 0 0 3px rgba(229,112,39,.28); border-color:var(--cv-accent)}',
-
-  '#cv-intelli-root .ir-filters{display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 6px}',
-  '#cv-intelli-root .chip{font-size:12px; padding:3px 7px; border:1px solid #e5e5e5; border-radius:999px; background:#fafafa; cursor:pointer}',
-  '#cv-intelli-root .chip:hover{background:#f6f7fb}',
-  '#cv-intelli-root .chip.active{background:var(--cv-tint); border-color:var(--cv-accent); color:#4a2a00}',
-
-  '#cv-intelli-root .tiny-tip{margin:4px 0 8px; font-size:12px; color:#666}',
-
-  '#cv-intelli-root .list-outer{border:1px solid #eee; border-radius:10px; background:#fff}',
-  '#cv-intelli-root .card{position:relative; border:1px solid #eee; border-radius:12px; background:#fff; box-shadow:0 6px 22px rgba(0,0,0,.05); margin-bottom:8px}',
-  '#cv-intelli-root .card .left-bar{position:absolute; left:0; top:0; bottom:0; width:5px; border-top-left-radius:12px; border-bottom-left-radius:12px; background:var(--cv-accent)}',
-  '#cv-intelli-root .card-h{position:relative; display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 12px 10px 18px; border-bottom:1px solid #eee; background:#fafafa; border-top-left-radius:12px; border-top-right-radius:12px}',
-  '#cv-intelli-root .card-title{font-weight:600; line-height:1.2; font-size:13px}',
-  '#cv-intelli-root .hdr-left{display:flex; align-items:center; gap:8px; min-width:0}',
-  '#cv-intelli-root .hdr-right{display:flex; align-items:center; gap:8px; flex-shrink:0}',
-  '#cv-intelli-root .count-badge{font-size:11px; background:var(--cv-tint); color:#4a2a00; border:1px solid var(--cv-accent); border-radius:999px; padding:1px 7px; white-space:nowrap}',
-  '#cv-intelli-root .dest-badge{font-size:11px; padding:1px 6px; border-radius:6px; background:var(--cv-tint); border:1px solid var(--cv-accent); white-space:nowrap}',
-  '#cv-intelli-root .card-b{padding:10px 12px}',
-
-  /* Virtual rows – shorter height */
-  '#cv-intelli-root .rows{position:relative; height:200px; overflow:auto; border:1px solid #f2f2f2; border-radius:8px; background:#fff}',
-  '#cv-intelli-root .vpad{height:0}',
-  '#cv-intelli-root .row{display:flex; align-items:center; justify-content:space-between; height:34px; padding:0 8px; border-bottom:1px solid #f6f6f6; font-variant-numeric:tabular-nums; font-size:13px}',
-  '#cv-intelli-root .row:hover{background:#fff7f2}',
-  '#cv-intelli-root .row-num{font-variant-numeric:tabular-nums}',
-
-  '#cv-intelli-root .muted{color:#666}',
-  '#cv-intelli-root .controls{display:flex; gap:8px; align-items:center; margin:0 0 8px}',
-  '#cv-intelli-root .sel{padding:6px 8px; border:1px solid #ddd; border-radius:8px; background:#fff}',
-  '#cv-intelli-root .sel:focus{outline:none; box-shadow:0 0 0 3px rgba(229,112,39,.28); border-color:var(--cv-accent)}',
-  '#cv-intelli-root .btn{cursor:pointer; border:none; background:var(--cv-accent); color:#fff; padding:7px 10px; border-radius:10px; line-height:1; font-weight:600; font-size:12px}',
-  '#cv-intelli-root .btn:hover{filter:brightness(.95)}',
-
-  /* Floating “Preview routing” toggle */
-  '#cv-intelli-root .preview-fab{position:absolute; right:46px; top:8px; z-index:2; background:#fff; color:#333; border:1px solid #e5e5e5; border-radius:999px; padding:5px 10px; font-size:12px; font-weight:600}',
-  '#cv-intelli-root .preview-fab:hover{filter:brightness(.97)}'
-].join('\\n');
-
-  
-
-      /* ===== scoped UI ===== */
-      '#cv-intelli-root .ir{display:flex; gap:16px; min-height:420px}',
-      '#cv-intelli-root .ir-left{width:340px; flex:0 0 340px}',
+      /* ===== scoped UI (compact) ===== */
+      '#cv-intelli-root .ir{display:flex; gap:12px; min-height:420px}',
+      '#cv-intelli-root .ir-left{width:320px; flex:0 0 320px}',
       '#cv-intelli-root .ir-right{flex:1; min-width:0}',
-      '#cv-intelli-root .ir-h1{font-weight:600; margin:0 0 8px}',
-      '#cv-intelli-root .ir-search{width:100%; padding:8px 10px; border:1px solid #ddd; border-radius:10px}',
-      '#cv-intelli-root .ir-search:focus{outline:none; box-shadow:0 0 0 3px rgba(229,112,39,.35); border-color:var(--cv-accent)}',
-      '#cv-intelli-root .ir-filters{display:flex; gap:6px; flex-wrap:wrap; margin:8px 0 10px}',
-      '#cv-intelli-root .chip{font-size:12px; padding:4px 8px; border:1px solid #e5e5e5; border-radius:999px; background:#fafafa; cursor:pointer}',
+      '#cv-intelli-root .ir-h1{font-weight:600; margin:0 0 6px; font-size:13px; color:#333}',
+      '#cv-intelli-root .ir-search{width:100%; padding:6px 9px; border:1px solid #ddd; border-radius:8px}',
+      '#cv-intelli-root .ir-search:focus{outline:none; box-shadow:0 0 0 3px rgba(229,112,39,.28); border-color:var(--cv-accent)}',
+      '#cv-intelli-root .ir-filters{display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 8px}',
+      '#cv-intelli-root .chip{font-size:11px; padding:3px 7px; border:1px solid #e5e5e5; border-radius:999px; background:#fafafa; cursor:pointer}',
       '#cv-intelli-root .chip:hover{background:#f6f7fb}',
       '#cv-intelli-root .chip.active{background:var(--cv-tint); border-color:var(--cv-accent); color:#4a2a00}',
       '#cv-intelli-root .list-outer{border:1px solid #eee; border-radius:10px; background:#fff}',
-      '#cv-intelli-root .card{position:relative; border:1px solid #eee; border-radius:12px; background:#fff; box-shadow:0 8px 30px rgba(0,0,0,.06); margin-bottom:12px}',
-      '#cv-intelli-root .card .left-bar{position:absolute; left:0; top:0; bottom:0; width:6px; border-top-left-radius:12px; border-bottom-left-radius:12px; background:var(--cv-accent)}',
-      '#cv-intelli-root .card-h{position:relative; display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 14px 12px 20px; border-bottom:1px solid #eee; background:#fafafa; border-top-left-radius:12px; border-top-right-radius:12px}',
-      '#cv-intelli-root .card-title{font-weight:600; line-height:1.2}',
-      '#cv-intelli-root .hdr-left{display:flex; align-items:center; gap:8px; min-width:0}',
-      '#cv-intelli-root .hdr-right{display:flex; align-items:center; gap:10px; flex-shrink:0}',
-      '#cv-intelli-root .count-badge{font-size:12px; background:var(--cv-tint); color:#4a2a00; border:1px solid var(--cv-accent); border-radius:999px; padding:2px 8px; white-space:nowrap}',
-      '#cv-intelli-root .dest-badge{font-size:12px; padding:2px 6px; border-radius:6px; background:var(--cv-tint); border:1px solid var(--cv-accent); white-space:nowrap}',
-      '#cv-intelli-root .card-b{padding:12px 14px}',
+      '#cv-intelli-root .card{position:relative; border:1px solid #eee; border-radius:11px; background:#fff; box-shadow:0 6px 22px rgba(0,0,0,.05); margin-bottom:8px}',
+      '#cv-intelli-root .card .left-bar{position:absolute; left:0; top:0; bottom:0; width:4px; border-top-left-radius:11px; border-bottom-left-radius:11px; background:var(--cv-accent)}',
+      '#cv-intelli-root .card-h{position:relative; display:flex; justify-content:space-between; align-items:center; gap:10px; padding:9px 12px 9px 16px; border-bottom:1px solid #f2f2f2; background:#fafafa; border-top-left-radius:11px; border-top-right-radius:11px}',
+      '#cv-intelli-root .card-title{font-weight:600; line-height:1.15; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:180px}',
+      '#cv-intelli-root .hdr-left{display:flex; align-items:center; gap:7px; min-width:0}',
+      '#cv-intelli-root .hdr-right{display:flex; align-items:center; gap:8px; flex-shrink:0}',
+      '#cv-intelli-root .count-badge{font-size:11px; background:var(--cv-tint); color:#4a2a00; border:1px solid var(--cv-accent); border-radius:999px; padding:1px 7px; white-space:nowrap}',
+      '#cv-intelli-root .dest-badge{font-size:11px; padding:1px 6px; border-radius:6px; background:var(--cv-tint); border:1px solid var(--cv-accent); white-space:nowrap}',
+      '#cv-intelli-root .card-b{padding:8px 12px; display:none}', /* collapsed cards have no body -> keeps list thin */
       '#cv-intelli-root .rows{position:relative; height:220px; overflow:auto; border:1px solid #f2f2f2; border-radius:8px; background:#fff}',
       '#cv-intelli-root .vpad{height:0}',
-      '#cv-intelli-root .row{display:flex; align-items:center; justify-content:space-between; height:40px; padding:0 10px; border-bottom:1px solid #f6f6f6; font-variant-numeric:tabular-nums}',
+      '#cv-intelli-root .row{display:flex; align-items:center; justify-content:space-between; height:34px; padding:0 10px; border-bottom:1px solid #f6f6f6; font-variant-numeric:tabular-nums}',
       '#cv-intelli-root .row:hover{background:#fff7f2}',
       '#cv-intelli-root .row-num{font-variant-numeric:tabular-nums}',
-      '#cv-intelli-root .muted{color:#666}',
-      '#cv-intelli-root .controls{display:flex; gap:8px; align-items:center; margin:0 0 10px}',
-      '#cv-intelli-root .sel{padding:6px 8px; border:1px solid #ddd; border-radius:8px; background:#fff}',
-      '#cv-intelli-root .sel:focus{outline:none; box-shadow:0 0 0 3px rgba(229,112,39,.35); border-color:var(--cv-accent)}',
-      '#cv-intelli-root .btn{cursor:pointer; border:none; background:var(--cv-accent); color:#fff; padding:8px 12px; border-radius:10px; line-height:1; font-weight:600}',
-      '#cv-intelli-root .btn:hover{filter:brightness(.95)}',
-      '#cv-intelli-root .pill{font-size:12px; padding:2px 8px; border:1px solid #ddd; border-radius:999px; background:#fafafa}',
+      '#cv-intelli-root .muted{color:#666; font-size:12px}',
+      '#cv-intelli-root .controls{display:none}', /* hide the old "When" controls to save room */
+      '#cv-intelli-root .btn{cursor:pointer; border:none; background:var(--cv-accent); color:#fff; padding:7px 10px; border-radius:9px; line-height:1; font-weight:600; font-size:12px}',
+      '#cv-intelli-root .btn:hover{filter:brightness(.96)}',
+      '#cv-intelli-root .btn.ghost{background:#f6f6f6; color:#333; border:1px solid #e3e3e3}',
+      '#cv-intelli-root .btn:disabled{opacity:.5; cursor:not-allowed}',
 
-      /* ===== AA dial pad (right side) ===== */
-      '#cv-intelli-root .dial{border:1px solid #eee; border-radius:12px; background:#fff; overflow:hidden}',
-      '#cv-intelli-root .dial-h{padding:10px 12px; background:#fafafa; border-bottom:1px solid #eee; font-weight:600}',
-      '#cv-intelli-root .dial-keys{display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:12px}',
-      '#cv-intelli-root .dial-key{width:42px; height:42px; border-radius:50%; border:1px solid #ddd; display:flex; align-items:center; justify-content:center; cursor:pointer; user-select:none}',
-      '#cv-intelli-root .dial-key:hover{border-color:var(--cv-accent); box-shadow:0 0 0 3px rgba(229,112,39,.18)}',
-      '#cv-intelli-root .dial-next{padding:12px; border-top:1px dashed #e5e5e5}',
-      '#cv-intelli-root .route-row{display:flex; align-items:center; gap:8px; padding:6px 0}',
-      '#cv-intelli-root .route-badge{font-size:12px; padding:2px 6px; border:1px solid var(--cv-accent); border-radius:6px; background:var(--cv-tint)}'
+      /* ===== drawer for routing preview ===== */
+      '#cv-intelli-root .drawer{position:fixed; right:24px; bottom:24px; width:560px; max-width:calc(100% - 48px); max-height:72vh; background:#fff; border:1px solid #ddd; border-radius:12px; box-shadow:0 12px 48px rgba(0,0,0,.18); transform:translateY(12px); opacity:0; pointer-events:none; transition:opacity .16s ease, transform .16s ease;}',
+      '#cv-intelli-root .drawer.open{opacity:1; transform:none; pointer-events:auto;}',
+      '#cv-intelli-root .drawer-h{padding:10px 12px; background:#fafafa; border-bottom:1px solid #eee; display:flex; align-items:center; justify-content:space-between; font-weight:600}',
+      '#cv-intelli-root .drawer-b{padding:12px; overflow:auto; max-height:calc(72vh - 44px)}',
+      '#cv-intelli-root .drawer-x{background:transparent; border:none; font-size:18px; cursor:pointer; padding:0 4px}'
     ].join('\n');
     var st=document.createElement('style'); st.id='cv-intelli-style'; st.type='text/css';
     st.appendChild(document.createTextNode(css)); document.head.appendChild(st);
@@ -321,7 +244,7 @@ if (!panel.querySelector('.cv-x-float')) {
       (host || document.body).appendChild(root);
       function close(){ root.style.display='none'; swapBanner(false); swapNavTitle(false); setNavActiveIntelli(false); }
       root.querySelector('.cv-back').addEventListener('click', close);
-      root.querySelector('.cv-x').addEventListener('click', close);
+      var x = root.querySelector('.cv-x'); if (x) x.addEventListener('click', close);
     } else {
       var parent = host || document.body;
       if (root.parentNode !== parent) parent.appendChild(root);
@@ -435,13 +358,12 @@ if (!panel.querySelector('.cv-x-float')) {
 })();
 
 
-/* ===================== Intelli Routing — COMPLETE DROP-IN ===================== */
+/* ===================== Intelli Routing — COMPLETE DROP-IN (compact + drawer) ===================== */
 ;(function(){
   "use strict";
-window.__cvIntelliLoaded = true; // prevent loading external smartrouting.js
-window.cvIntelliExportUrl = '/portal/inventory/export.csv';
-window.cvIntelliPreferMode = 'export'; // 'export' | 'api' | 'scrape'
-var __cvInvPromise = null; // single-flight gate for inventory loads
+  window.cvIntelliExportUrl = '/portal/inventory/export.csv';
+  window.cvIntelliPreferMode = 'export'; // 'export' | 'api' | 'scrape'
+  var __cvInvPromise = null; // single-flight for inventory
 
   /* ---------- tiny helpers ---------- */
   function log(){ try{ console.log.apply(console, ['[Intelli]'].concat([].slice.call(arguments))); }catch(_){} }
@@ -465,7 +387,6 @@ var __cvInvPromise = null; // single-flight gate for inventory loads
   function _norm(v){ return (v==null?'':String(v)).trim(); }
   function _normKey(v){ return _norm(v).toLowerCase(); }
 
-  // Map UI text to canonical destination types
   function mapDestType(t){
     t=_normKey(t);
     if(/^user|person|extension$/.test(t)) return 'User';
@@ -476,7 +397,6 @@ var __cvInvPromise = null; // single-flight gate for inventory loads
     return (t ? t[0].toUpperCase()+t.slice(1) : 'External');
   }
 
-  // Pull an extension from a Destination cell like "201 (Hannibal Lecter)" or "Test (701)"
   function extFromDestination(destText){
     const s = _norm(destText);
     let m = s.match(/^\s*(\d{2,6})\b/);
@@ -486,83 +406,81 @@ var __cvInvPromise = null; // single-flight gate for inventory loads
   }
 
   // ---- Export (CSV) helpers ----
-function parseCSV(text) {
-  text = String(text || '');
-  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // strip BOM
-  var rows = [], row = [], i = 0, c, q = false, field = '';
-  for (; i < text.length; i++) {
-    c = text[i];
-    if (q) {
-      if (c === '"') { if (text[i+1] === '"') { field += '"'; i++; } else q = false; }
-      else field += c;
-    } else {
-      if (c === '"') q = true;
-      else if (c === ',') { row.push(field); field = ''; }
-      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
-      else if (c === '\r') { /* ignore */ }
-      else field += c;
-    }
-  }
-  row.push(field); rows.push(row);
-  var headers = (rows.shift() || []).map(h => (h || '').trim());
-  return rows.filter(r => r.some(x => x && String(x).trim().length))
-             .map(r => {
-               var o = {};
-               for (var j = 0; j < headers.length; j++) o[headers[j]] = (r[j] || '').trim();
-               return o;
-             });
-}
-
-function mapExportRecord(rec) {
-  function pick(o, keys) { for (var k of keys) if (o[k] != null && String(o[k]).trim() !== '') return String(o[k]).trim(); return ''; }
-  var phone = pick(rec, ['Phone Number','Phone','Number','TN','DID','DNIS']);
-  var treat = pick(rec, ['Treatment','Routing','Type','Destination Type','Owner Type']);
-  var dname = pick(rec, ['Destination','Destination Name','Owner','Owner Name','Notes','Description']);
-  var did   = pick(rec, ['Dest ID','Destination ID','Owner ID','Extension','Ext','Login','Username','User ID']);
-  if (!did && dname) did = extFromDestination(dname);
-  var digits = (phone || '').replace(/[^\d]/g,'');
-  return {
-    id:       (rec.id || rec.uuid || ('n' + (digits || '').slice(-8))),
-    number:   formatTN(phone),
-    label:    pick(rec, ['Label','Alias','Tag']),
-    destType: mapDestType(treat),
-    destId:   String(did || ''),
-    destName: _norm(dname)
-  };
-}
-
-// Known export path (already set near top): /portal/inventory/export.csv
-async function probeExportUrl() {
-  if (window.cvIntelliExportUrl) return window.cvIntelliExportUrl;
-  const candidates = [
-    '/portal/inventory/export.csv',
-    '/portal/inventory/export?format=csv',
-    '/portal/inventory?export=csv'
-  ];
-  for (let i = 0; i < candidates.length; i++) {
-    try {
-      const res = await fetch(candidates[i], { credentials: 'include' });
-      const ct  = (res.headers.get('content-type') || '').toLowerCase();
-      if (res.ok && (ct.includes('text/csv') || ct.includes('application/csv') || ct.includes('octet-stream'))) {
-        window.cvIntelliExportUrl = candidates[i];
-        return window.cvIntelliExportUrl;
+  function parseCSV(text) {
+    text = String(text || '');
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // strip BOM
+    var rows = [], row = [], i = 0, c, q = false, field = '';
+    for (; i < text.length; i++) {
+      c = text[i];
+      if (q) {
+        if (c === '"') { if (text[i+1] === '"') { field += '"'; i++; } else q = false; }
+        else field += c;
+      } else {
+        if (c === '"') q = true;
+        else if (c === ',') { row.push(field); field = ''; }
+        else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+        else if (c === '\r') { /* ignore */ }
+        else field += c;
       }
-    } catch (_) {}
+    }
+    row.push(field); rows.push(row);
+    var headers = (rows.shift() || []).map(h => (h || '').trim());
+    return rows.filter(r => r.some(x => x && String(x).trim().length))
+               .map(r => {
+                 var o = {};
+                 for (var j = 0; j < headers.length; j++) o[headers[j]] = (r[j] || '').trim();
+                 return o;
+               });
   }
-  // If all else fails, just return the primary
-  return '/portal/inventory/export.csv';
-}
 
-async function loadInventoryViaExport() {
-  const exp = await probeExportUrl();
-  const res = await fetch(exp, { credentials: 'include', headers: { 'Accept': 'text/csv, */*' } });
-  if (!res.ok) throw new Error('HTTP ' + res.status + ' fetching export CSV');
-  const txt  = await res.text();
-  const rows = parseCSV(txt).map(mapExportRecord);
-  if (!rows.length) throw new Error('Export CSV parsed, but no rows found');
-  window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() }; // cache 5m (checked elsewhere)
-  return rows;
-}
+  function mapExportRecord(rec) {
+    function pick(o, keys) { for (var k of keys) if (o[k] != null && String(o[k]).trim() !== '') return String(o[k]).trim(); return ''; }
+    var phone = pick(rec, ['Phone Number','Phone','Number','TN','DID','DNIS']);
+    var treat = pick(rec, ['Treatment','Routing','Type','Destination Type','Owner Type']);
+    var dname = pick(rec, ['Destination','Destination Name','Owner','Owner Name','Notes','Description']);
+    var did   = pick(rec, ['Dest ID','Destination ID','Owner ID','Extension','Ext','Login','Username','User ID']);
+    if (!did && dname) did = extFromDestination(dname);
+    var digits = (phone || '').replace(/[^\d]/g,'');
+    return {
+      id:       (rec.id || rec.uuid || ('n' + (digits || '').slice(-8))),
+      number:   formatTN(phone),
+      label:    pick(rec, ['Label','Alias','Tag']),
+      destType: mapDestType(treat),
+      destId:   String(did || ''),
+      destName: _norm(dname)
+    };
+  }
+
+  async function probeExportUrl() {
+    if (window.cvIntelliExportUrl) return window.cvIntelliExportUrl;
+    const candidates = [
+      '/portal/inventory/export.csv',
+      '/portal/inventory/export?format=csv',
+      '/portal/inventory?export=csv'
+    ];
+    for (let i = 0; i < candidates.length; i++) {
+      try {
+        const res = await fetch(candidates[i], { credentials: 'include' });
+        const ct  = (res.headers.get('content-type') || '').toLowerCase();
+        if (res.ok && (ct.includes('text/csv') || ct.includes('application/csv') || ct.includes('octet-stream'))) {
+          window.cvIntelliExportUrl = candidates[i];
+          return window.cvIntelliExportUrl;
+        }
+      } catch (_) {}
+    }
+    return '/portal/inventory/export.csv';
+  }
+
+  async function loadInventoryViaExport() {
+    const exp = await probeExportUrl();
+    const res = await fetch(exp, { credentials: 'include', headers: { 'Accept': 'text/csv, */*' } });
+    if (!res.ok) throw new Error('HTTP ' + res.status + ' fetching export CSV');
+    const txt  = await res.text();
+    const rows = parseCSV(txt).map(mapExportRecord);
+    if (!rows.length) throw new Error('Export CSV parsed, but no rows found');
+    window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() }; // cache 5m
+    return rows;
+  }
 
   /* ===================== DATA: NUMBERS (API → iframe) ===================== */
   var NUMBERS_URL = window.cvIntelliNumbersUrl || null;
@@ -584,7 +502,6 @@ async function loadInventoryViaExport() {
     throw new Error('No JSON endpoint; falling back to iframe scrape.');
   }
 
-  // ===== Inventory scraping (fast & resilient) =====
   function scrapeInventoryViaIframe(){
     return new Promise(function(resolve, reject){
       try{
@@ -624,7 +541,6 @@ async function loadInventoryViaExport() {
                 phone: (tds[0].textContent||'').trim(),
                 treatment: (tds[1].textContent||'').trim(),
                 destination: (tds[2].textContent||'').trim()
-                // Notes & further columns intentionally ignored (faster & cleaner)
               };
             }
 
@@ -633,7 +549,6 @@ async function loadInventoryViaExport() {
                        ($(table).dataTable && $(table).dataTable().api ? $(table).dataTable().api() : null);
               if(!dt){ cleanup(); return reject(new Error('DataTables not active on inventory table')); }
 
-              // Fast path: not server-side → read all visible rows at once
               try {
                 var settings = dt.settings()[0];
                 if (settings && !settings.oFeatures.bServerSide) {
@@ -659,7 +574,6 @@ async function loadInventoryViaExport() {
                 }
               } catch(_) { /* fall through */ }
 
-              // Fallback: paginate quickly
               try{ dt.page.len(200).draw(false); }catch(_){}
               var out=[], seen=new Set();
               function collectPage(){
@@ -692,59 +606,53 @@ async function loadInventoryViaExport() {
     });
   }
 
-async function loadInventory(){
-  // TTL cache: 5 minutes
-  if (window.__cvIntelliNumCache && (Date.now() - window.__cvIntelliNumCache.t < 5*60*1000)) {
-    return window.__cvIntelliNumCache.rows.slice();
-  }
-  if (__cvInvPromise) return __cvInvPromise; // single-flight
+  async function loadInventory(){
+    if (window.__cvIntelliNumCache && (Date.now() - window.__cvIntelliNumCache.t < 5*60*1000)) {
+      return window.__cvIntelliNumCache.rows.slice();
+    }
+    if (__cvInvPromise) return __cvInvPromise;
 
-  __cvInvPromise = (async () => {
-    // 1) Try Export first unless user forced 'api'
-    if ((window.cvIntelliPreferMode || 'export') !== 'api') {
-      try {
-        const rows = await loadInventoryViaExport();
-        if (rows && rows.length) return rows;
-      } catch (e) {
-        log('Export CSV failed — falling back:', e && e.message ? e.message : e);
+    __cvInvPromise = (async () => {
+      if ((window.cvIntelliPreferMode || 'export') !== 'api') {
+        try {
+          const rows = await loadInventoryViaExport();
+          if (rows && rows.length) return rows;
+        } catch (e) {
+          log('Export CSV failed — falling back:', e && e.message ? e.message : e);
+        }
       }
-    }
 
-    // 2) API
-    try {
-      const base = await probeNumbersUrl();
-      const raw  = await fetchJSON(addParam(base, 'limit', '5000'));
-      const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
-      if (!Array.isArray(list) || !list.length) throw new Error('Endpoint returned no items: '+base);
-      const rows = list.map(function(x,i){
-        const typeRaw = x.dest_type || x.owner_type || x.type || x.destination_type || x.treatment;
-        const type    = mapDestType(typeRaw);
-        const nameRaw = x.dest_name || x.owner_name || x.destination_name || x.destination || x.notes || '';
-        const idRaw   = x.dest_id   || x.owner_id   || x.destination_id || x.owner_ext || x.ext
-                        || (type==='User'||type==='AA'||type==='Queue' ? extFromDestination(nameRaw) : '');
-        return {
-          id:       x.id || x.uuid || ('num'+i),
-          number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
-          label:    x.label || x.alias || x.description || '',
-          destType: type,
-          destId:   String(idRaw || ''),
-          destName: _norm(nameRaw)
-        };
-      });
-      window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() };
-      return rows;
-    } catch(apiErr){
-      log('API numbers failed — falling back to iframe scrape:', apiErr && apiErr.message ? apiErr.message : apiErr);
-    }
+      try {
+        const base = await probeNumbersUrl();
+        const raw  = await fetchJSON(addParam(base, 'limit', '5000'));
+        const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
+        if (!Array.isArray(list) || !list.length) throw new Error('Endpoint returned no items: '+base);
+        const rows = list.map(function(x,i){
+          const typeRaw = x.dest_type || x.owner_type || x.type || x.destination_type || x.treatment;
+          const type    = mapDestType(typeRaw);
+          const nameRaw = x.dest_name || x.owner_name || x.destination_name || x.destination || x.notes || '';
+          const idRaw   = x.dest_id   || x.owner_id   || x.destination_id || x.owner_ext || x.ext
+                          || (type==='User'||type==='AA'||type==='Queue' ? extFromDestination(nameRaw) : '');
+          return {
+            id:       x.id || x.uuid || ('num'+i),
+            number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
+            label:    x.label || x.alias || x.description || '',
+            destType: type,
+            destId:   String(idRaw || ''),
+            destName: _norm(nameRaw)
+          };
+        });
+        window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() };
+        return rows;
+      } catch(apiErr){
+        log('API numbers failed — falling back to iframe scrape:', apiErr && apiErr.message ? apiErr.message : apiErr);
+      }
 
-    // 3) Scrape (last resort)
-    return await scrapeInventoryViaIframe();
-  })().finally(function(){ __cvInvPromise = null; });
+      return await scrapeInventoryViaIframe();
+    })().finally(function(){ __cvInvPromise = null; });
 
-  return __cvInvPromise;
-}
-
-
+    return __cvInvPromise;
+  }
 
   /* ===================== DATA: USERS DIRECTORY (for nice labels) ===================== */
   var USERS_URL = window.cvIntelliUsersUrl || null;
@@ -837,18 +745,11 @@ async function loadInventory(){
       var type = r.destType || 'External';
       var id   = _norm(r.destId);
       var name = _norm(r.destName);
-      // Build a stable key: prefer id for User/AA/Queue; else name
       var keyPart = (id ? ('id:'+id) : ('name:'+_normKey(name)));
       var key = type + '|' + keyPart;
 
       if (!map[key]) {
-        map[key] = {
-          key: key,
-          type: type,
-          id: id,
-          name: name,
-          numbers: []
-        };
+        map[key] = { key, type, id, name, numbers: [] };
       }
       map[key].numbers.push({ id:r.id, number:r.number, label:r.label||'' });
     }
@@ -857,87 +758,7 @@ async function loadInventory(){
     return out;
   }
 
-  /* ===================== UI helpers ===================== */
-  function ensureStyle(){
-    if (document.getElementById('cv-intelli-style')) return;
-    var css = [
-      '#cv-intelli-root{display:none; --cv-accent:#f89406; --cv-tint:#FDE8CC;}',
-      '#cv-intelli-root.dock{position:absolute; inset:0; z-index:9999}',
-      '#cv-intelli-root.float{position:fixed; inset:0; z-index:999999}',
-      '#cv-intelli-root .cv-back{position:absolute; inset:0; background:#fff; opacity:1}',
-      '#cv-intelli-root .cv-panel{position:absolute; inset:0; background:#fff; box-sizing:border-box; font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}',
-      '#cv-intelli-root.float .cv-panel{margin:4% auto; max-width:960px; height:auto; border-radius:12px; box-shadow:0 8px 40px rgba(0,0,0,.12)}',
-      '#cv-intelli-root .cv-h{display:flex; align-items:center; justify-content:space-between; padding:12px 16px; background:linear-gradient(180deg, var(--cv-tint), #fff); border-bottom:1px solid rgba(229,112,39,.22); font-weight:600}',
-      '#cv-intelli-root .cv-x{cursor:pointer; background:transparent; border:none; font-size:20px; line-height:1}',
-      '#cv-intelli-root .cv-b{padding:16px; height:calc(100% - 52px); overflow:auto}',
-
-      '.ir{display:flex; gap:16px; min-height:420px}',
-      '.ir-left{width:340px; flex:0 0 340px}',
-      '.ir-right{flex:1; min-width:0}',
-      '.ir-h1{font-weight:600; margin:0 0 8px}',
-      '.ir-search{width:100%; padding:8px 10px; border:1px solid #ddd; border-radius:10px}',
-      '.ir-search:focus{outline:none; box-shadow:0 0 0 3px rgba(229,112,39,.35); border-color:var(--cv-accent)}',
-      '.ir-filters{display:flex; gap:6px; flex-wrap:wrap; margin:8px 0 10px}',
-      '.chip{font-size:12px; padding:4px 8px; border:1px solid #e5e5e5; border-radius:999px; background:#fafafa; cursor:pointer}',
-      '.chip:hover{background:#f6f7fb}', '.chip.active{background:var(--cv-tint); border-color:var(--cv-accent); color:#4a2a00}',
-      '.list-outer{border:1px solid #eee; border-radius:10px; background:#fff}',
-      '.card{position:relative; border:1px solid #eee; border-radius:12px; background:#fff; box-shadow:0 8px 30px rgba(0,0,0,.06); margin-bottom:12px}',
-      '.card .left-bar{position:absolute; left:0; top:0; bottom:0; width:6px; border-top-left-radius:12px; border-bottom-left-radius:12px; background:var(--cv-accent)}',
-      '.card-h{position:relative; display:flex; justify-content:space-between; align-items:center; gap:12px; padding:12px 14px 12px 20px; border-bottom:1px solid #eee; background:#fafafa; border-top-left-radius:12px; border-top-right-radius:12px}',
-      '.card-title{font-weight:600; line-height:1.2}',
-      '.hdr-left{display:flex; align-items:center; gap:8px; min-width:0}',
-      '.hdr-right{display:flex; align-items:center; gap:10px; flex-shrink:0}',
-      '.count-badge{font-size:12px; background:var(--cv-tint); color:#4a2a00; border:1px solid var(--cv-accent); border-radius:999px; padding:2px 8px; white-space:nowrap}',
-      '.dest-badge{font-size:12px; padding:2px 6px; border-radius:6px; background:var(--cv-tint); border:1px solid var(--cv-accent); white-space:nowrap}',
-      '.card-b{padding:12px 14px}',
-      '.rows{position:relative; height:220px; overflow:auto; border:1px solid #f2f2f2; border-radius:8px; background:#fff}',
-      '.vpad{height:0}',
-      '.row{display:flex; align-items:center; justify-content:space-between; height:40px; padding:0 10px; border-bottom:1px solid #f6f6f6; font-variant-numeric:tabular-nums}',
-      '.row:hover{background:#fff7f2}', '.row-num{font-variant-numeric:tabular-nums}', '.muted{color:#666}',
-      '.controls{display:flex; gap:8px; align-items:center; margin:0 0 10px}',
-      '.sel{padding:6px 8px; border:1px solid #ddd; border-radius:8px; background:#fff}',
-      '.sel:focus{outline:none; box-shadow:0 0 0 3px rgba(229,112,39,.35); border-color:var(--cv-accent)}',
-      '.btn{cursor:pointer; border:none; background:var(--cv-accent); color:#fff; padding:8px 12px; border-radius:10px; line-height:1; font-weight:600}',
-      '.btn:hover{filter:brightness(.95)}'
-    ].join('\n');
-    var st=document.createElement('style'); st.id='cv-intelli-style'; st.type='text/css';
-    st.appendChild(document.createTextNode(css)); document.head.appendChild(st);
-  }
-
-  function findDockHost(){
-    var sels=['#page-content','#content','#contentArea','#main-content','#portal-content','#container','#content_wrap','#contentWrap','#workarea','#inner-content','#engagecx-slot'];
-    for(var i=0;i<sels.length;i++){ var el=document.querySelector(sels[i]); if(el && el.offsetParent!==null && el.offsetHeight>200) return el; }
-    return null;
-  }
-
-  function ensureRoot(){
-    ensureStyle();
-    var host = findDockHost();
-    var mode = host ? 'dock' : 'float';
-    var root = document.getElementById('cv-intelli-root');
-    if(!root){
-      root = document.createElement('div');
-      root.id='cv-intelli-root';
-      root.innerHTML =
-        '<div class="cv-back"></div>'
-      + '<div class="cv-panel" role="dialog" aria-modal="true" aria-label="Intelli Routing">'
-      + '  <div class="cv-h"><div>Intelli Routing</div><button class="cv-x" title="Close">×</button></div>'
-      + '  <div class="cv-b"><div id="cv-intelli-mount">Loading…</div></div>'
-      + '</div>';
-      (host || document.body).appendChild(root);
-      function close(){ root.style.display='none'; }
-      root.querySelector('.cv-back').addEventListener('click', close);
-      root.querySelector('.cv-x').addEventListener('click', close);
-    }else{
-      var parent = host || document.body;
-      if(root.parentNode!==parent) parent.appendChild(root);
-    }
-    root.className = mode;
-    if (host && getComputedStyle(host).position==='static'){ host.style.position='relative'; }
-    return root;
-  }
-
-  // Virtual list with optional right label (e.g., "#2051")
+  // Virtual list with optional right label
   function mountVirtualList(container, items, rowH, rightLabel){
     container.innerHTML=''; container.className='rows';
     var pad=make('div','vpad'); pad.style.height=(items.length*rowH)+'px';
@@ -958,7 +779,7 @@ async function loadInventory(){
     container.addEventListener('scroll', draw); draw(); return { redraw: draw };
   }
 
-  /* ===================== MOUNT APP ===================== */
+  /* ===================== MOUNT APP (compact) ===================== */
   function cvIntelliRoutingMount(root){
     try{
       root.innerHTML='';
@@ -979,49 +800,24 @@ async function loadInventory(){
       +   '<div id="ir-count" class="muted" style="margin-top:6px"></div>'
       + '</div>'
       + '<div class="ir-right">'
-      +   '<div class="ir-h1">Details</div>'
-      +   '<div class="controls">'
-      +     '<label class="muted">When</label>'
-      +     '<select id="ir-when" class="sel"><option value="now">Now</option><option value="custom">Pick date/time…</option></select>'
-      +     '<input id="ir-dt" type="datetime-local" class="sel" style="display:none"/>'
-      +     '<span class="chip muted">Grouping: First Hop</span>'
+      +   '<div class="ir-h1" style="display:flex; justify-content:flex-end;">'
+      +     '<button id="ir-open-preview" class="btn ghost" disabled>Preview routing</button>'
       +   '</div>'
-      +   '<div id="ir-detail" class="muted">Expand a destination on the left to view numbers and previews.</div>'
+      +   '<div id="ir-detail" class="muted"></div>'
       + '</div>';
       root.appendChild(wrap);
-    // One-time tip (instead of repeating on every card)
-var tip = document.createElement('div');
-tip.className = 'tiny-tip';
-tip.textContent = 'Tip: click a destination’s “Expand” or use “Preview routing” to open details.';
-wrap.querySelector('.ir-left').insertBefore(tip, wrap.querySelector('.list-outer'));
 
-// Start with right pane hidden; add a floating toggle
-var rightPane = wrap.querySelector('.ir-right');
-rightPane.style.display = 'none';
-var fab = document.createElement('button');
-fab.className = 'preview-fab';
-fab.id = 'ir-preview-toggle';
-fab.textContent = 'Preview routing';
-root.closest('#cv-intelli-root').querySelector('.cv-panel').appendChild(fab);
+      // drawer
+      var drawer = document.createElement('div');
+      drawer.id = 'ir-drawer';
+      drawer.className = 'drawer';
+      drawer.innerHTML =
+        '<div class="drawer-h"><div id="ir-drawer-title">Preview</div><button class="drawer-x" title="Close">×</button></div>'
+      + '<div class="drawer-b" id="ir-drawer-body"></div>';
+      root.appendChild(drawer);
+      drawer.querySelector('.drawer-x').addEventListener('click', function(){ drawer.classList.remove('open'); });
 
-function setRight(open){
-  rightPane.style.display = open ? '' : 'none';
-  fab.textContent = open ? 'Hide preview' : 'Preview routing';
-}
-fab.addEventListener('click', function(){ setRight(rightPane.style.display === 'none'); });
-
-      function renderNonAADetail(group, host){
-        var rightLabel = /^\d{2,6}$/.test(group.id) ? ('#'+group.id) : '';
-        host.className=''; host.innerHTML =
-          '<div class="card">'
-        + '  <div class="card-h"><div class="hdr-left"><div class="card-title">'+((group.type==='User') ? nameForUserGroup(group, window.__cvUserDir||null) : (group.name || group.type))+'</div><span class="dest-badge">'+group.type+'</span></div></div>'
-        + '  <div class="card-b">This destination has <b>'+group.count+'</b> numbers.<br/><span class="muted">Use Export CSV in the left card for the full list.</span></div>'
-        + '</div>'
-        + '<div class="card"><div class="card-b"><div id="ir-numbers"></div></div></div>';
-        mountVirtualList(document.getElementById('ir-numbers'), group.numbers, 40, rightLabel);
-      }
-
-      var groups=[], viewGroups=[], activeDetail=null;
+      var groups=[], viewGroups=[], activeKey=null;
 
       function renderCard(g){
         var title = (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
@@ -1033,37 +829,17 @@ fab.addEventListener('click', function(){ setRight(rightPane.style.display === '
         hdr.appendChild(left);
         var right=make('div','hdr-right');
         right.appendChild(make('span','count-badge', g.count + ' number' + (g.count===1?'':'s')));
-        var btn=make('button','btn', activeDetail===g.key ? 'Collapse' : 'Expand');
+        var btn=make('button','btn', activeKey===g.key ? 'Deselect' : 'Select');
         right.appendChild(btn); hdr.appendChild(right);
         card.appendChild(hdr);
 
-        var body=make('div','card-b');
-        if(activeDetail===g.key){
-          var acts=make('div','card-actions');
-          var exportBtn=make('button','btn','Export CSV');
-          exportBtn.onclick=function(){
-            var csv='Number,Label\n', i, n, lbl;
-            for(i=0;i<g.numbers.length;i++){ n=g.numbers[i]; lbl=(n.label||'').replace(/"/g,'""'); csv+='"'+n.number+'","'+lbl+'"\n'; }
-            var blob=new Blob([csv],{type:'text/csv'}), url=URL.createObjectURL(blob), a=document.createElement('a');
-            a.href=url; a.download=(g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_'); a.click(); setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
-          };
-          acts.appendChild(exportBtn); body.appendChild(acts);
-
-          // short preview list in card
-          var rows=make('div','rows'); body.appendChild(rows);
-          var rightLabel = /^\d{2,6}$/.test(g.id) ? ('#'+g.id) : '';
-          mountVirtualList(rows, g.numbers, 40, rightLabel);
-        }else{
-          body.appendChild(make('div','muted','Click expand to view numbers and previews.'));
-        }
+        var body=make('div','card-b'); // kept for structure, hidden by CSS to keep list thin
         card.appendChild(body);
 
         btn.onclick=function(){
-          activeDetail = (activeDetail===g.key) ? null : g.key;
-          applyFilters();
-          var detail=document.getElementById('ir-detail');
-          if(activeDetail===g.key){ renderNonAADetail(g, detail); }
-          else { detail.className='muted'; detail.innerHTML='Expand a destination on the left to view numbers and previews.'; }
+          activeKey = (activeKey===g.key) ? null : g.key;
+          applyFilters(); // re-render to update button text
+          updatePreviewButton();
         };
 
         return card;
@@ -1073,10 +849,6 @@ fab.addEventListener('click', function(){ setRight(rightPane.style.display === '
         var host=document.getElementById('ir-groups'); host.innerHTML='';
         for(var i=0;i<viewGroups.length;i++){ host.appendChild(renderCard(viewGroups[i])); }
         document.getElementById('ir-count').textContent = viewGroups.length + ' destination group' + (viewGroups.length===1?'':'s');
-        var found = viewGroups.find(function(g){ return g.key===activeDetail; });
-        var detail=document.getElementById('ir-detail');
-        if(found){ renderNonAADetail(found, detail); }
-        else { detail.className='muted'; detail.innerHTML='Expand a destination on the left to view numbers and previews.'; }
       }
 
       function applyFilters(){
@@ -1097,26 +869,67 @@ fab.addEventListener('click', function(){ setRight(rightPane.style.display === '
         renderGroups();
       }
 
+      function findActive(){
+        if(!activeKey) return null;
+        for (var i=0;i<groups.length;i++) if (groups[i].key===activeKey) return groups[i];
+        return null;
+      }
+
+      function updatePreviewButton(){
+        var btn = document.getElementById('ir-open-preview');
+        var g = findActive();
+        if (g){
+          btn.disabled = false;
+          btn.textContent = 'Preview routing ('+g.count+')';
+        } else {
+          btn.disabled = true;
+          btn.textContent = 'Preview routing';
+        }
+      }
+
+      function openDrawerForGroup(g){
+        var title = (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
+        document.getElementById('ir-drawer-title').textContent = title + ' — ' + g.type;
+
+        var body = document.getElementById('ir-drawer-body');
+        body.innerHTML = '';
+        var actions = make('div', null);
+        var exportBtn = make('button','btn','Export CSV');
+        exportBtn.style.marginBottom = '10px';
+        exportBtn.onclick = function(){
+          var csv='Number,Label\n', i, n, lbl;
+          for(i=0;i<g.numbers.length;i++){ n=g.numbers[i]; lbl=(n.label||'').replace(/"/g,'""'); csv+='"'+n.number+'","'+lbl+'"\n'; }
+          var blob=new Blob([csv],{type:'text/csv'}), url=URL.createObjectURL(blob), a=document.createElement('a');
+          a.href=url; a.download=(g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_'); a.click(); setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+        };
+        actions.appendChild(exportBtn);
+        body.appendChild(actions);
+
+        var rows = make('div'); body.appendChild(rows);
+        var rightLabel = /^\d{2,6}$/.test(g.id) ? ('#'+g.id) : '';
+        mountVirtualList(rows, g.numbers, 34, rightLabel);
+        document.getElementById('ir-drawer').classList.add('open');
+      }
+
       // wire UI
-      document.getElementById('ir-q').addEventListener('input', function(){ activeDetail=null; applyFilters(); });
+      document.getElementById('ir-q').addEventListener('input', function(){ applyFilters(); });
       var chips = wrap.querySelectorAll('.chip');
       chips.forEach(function(ch){ ch.addEventListener('click', function(){
         chips.forEach(function(c){ c.classList.remove('active'); });
-        this.classList.add('active'); activeDetail=null; applyFilters();
+        this.classList.add('active'); applyFilters();
       });});
-      document.getElementById('ir-when').addEventListener('change', function(){
-        document.getElementById('ir-dt').style.display = this.value==='custom' ? '' : 'none';
+      document.getElementById('ir-open-preview').addEventListener('click', function(){
+        var g = findActive(); if (g) openDrawerForGroup(g);
       });
 
       // boot
       var detailEl=document.getElementById('ir-detail');
-      detailEl.innerHTML='Loading inventory…';
+      detailEl.textContent='Select a destination on the left, then click “Preview routing”.';
       loadInventory().then(async function(rows){
         groups = groupByDestination(rows||[]);
         try { window.__cvUserDir = await loadUserDirectory(); } catch(e){ log('user names not resolved:', e && e.message ? e.message : e); }
         applyFilters();
-        detailEl.className='muted';
-        detailEl.innerHTML='Expand a destination on the left to view numbers and previews.';
+        updatePreviewButton();
       }).catch(function(err){
         console.error('[Intelli] inventory error:', err);
         detailEl.className='';
@@ -1136,12 +949,21 @@ fab.addEventListener('click', function(){ setRight(rightPane.style.display === '
   }
 
   function openOverlay(){
-    var root = ensureRoot();
+    var root = (function ensureRoot(){
+      var host = (function(){
+        var sels=['#page-content','#content','#contentArea','#main-content','#portal-content','#container','#content_wrap','#contentWrap','#workarea','#inner-content','#engagecx-slot'];
+        for(var i=0;i<sels.length;i++){ var el=document.querySelector(sels[i]); if(el && el.offsetParent!==null && el.offsetHeight>200) return el; }
+        return null;
+      })();
+      var root = document.getElementById('cv-intelli-root'); if(!root){ /* will be created by earlier block */ }
+      return document.getElementById('cv-intelli-root');
+    })();
+    if (!root) return;
     root.style.display='block';
     var mount = document.getElementById('cv-intelli-mount');
     cvIntelliRoutingMount(mount);
   }
-  window.cvIntelliOpen = openOverlay; // expose
+  window.cvIntelliOpen = openOverlay;
 
   // Also listen for legacy event
   window.addEventListener('cv:intelli-routing:open', openOverlay, false);
@@ -1200,3 +1022,4 @@ fab.addEventListener('click', function(){ setRight(rightPane.style.display === '
   })();
 
 })();
+
