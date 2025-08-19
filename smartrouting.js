@@ -215,7 +215,7 @@
     return null;
   }
 
-  /* ------- Banner / Title helpers ------- */
+    /* ------- Banner / Title helpers ------- */
   var _bannerEls = [], _origBannerTexts = [];
   function collectBannerEls(){
     _bannerEls = []; _origBannerTexts = [];
@@ -368,18 +368,37 @@
   function _norm(v){ return (v==null?'':String(v)).trim(); }
   function _normKey(v){ return _norm(v).toLowerCase(); }
 
-  /* ---------- type mapping (from Treatment) ---------- */
-  function mapDestType(t){
-    t = _normKey(t);
-    if (!t) return 'External';
-    if (/^(user|person|extension)$/.test(t))                return 'User';
-    if (/^(queue|call ?queue|acd)$/.test(t))                return 'Queue';
-    if (/^(aa|auto.?attendant|ivr)$/.test(t))               return 'AA';
-    if (/^(vm|voice ?mail|voicemail)$/.test(t))             return 'VM';
-    if (/^(available number|unassigned)$/.test(t))          return 'External';
-    if (/^(external|pstn|sip|route|number)$/.test(t))       return 'External';
-    if (/number$/.test(t))                                  return 'External';
-    return t.charAt(0).toUpperCase() + t.slice(1);
+  /* ---------- type mapping (from Treatment + Destination text) ---------- */
+  function mapDestType(t, name){
+    var tt = _normKey(t);
+    var nm = _normKey(name);
+
+    // Auto Attendant (AA, IVR, Auto/Digital Receptionist, etc.)
+    if (
+      /^(aa|ivr|auto[\s\-_]*attendant|auto[\s\-_]*receptionist|digital[\s\-_]*receptionist)$/.test(tt) ||
+      /\b(aa|ivr|auto[\s\-_]*attendant|auto[\s\-_]*receptionist|digital[\s\-_]*receptionist)\b/.test(nm)
+    ) return 'AA';
+
+    // Queues / ACD / Hunt/Ring Groups
+    if (
+      /^(queue|call ?queue|acd|hunt(?: |-)group|ring ?group)$/.test(tt) ||
+      /\b(queue|acd|hunt(?: |-)group|ring ?group)\b/.test(nm)
+    ) return 'Queue';
+
+    // Voicemail
+    if (/^(vm|voice ?mail|voicemail)$/.test(tt) || /\b(voicemail|vm)\b/.test(nm)) return 'VM';
+
+    // Explicit user-ish
+    if (/^(user|person|extension)$/.test(tt)) return 'User';
+
+    // External / unassigned
+    if (
+      /^(external|pstn|sip|route|number|available number|unassigned)$/.test(tt) ||
+      /\b(available number|unassigned)\b/.test(nm)
+    ) return 'External';
+
+    // Fallback
+    return tt ? (tt.charAt(0).toUpperCase() + tt.slice(1)) : 'External';
   }
 
   function extFromDestination(destText){
@@ -423,7 +442,7 @@
       id:       (rec.id || rec.uuid || ('n' + (digits || '').slice(-8))),
       number:   formatTN(phone),
       label:    label,
-      destType: mapDestType(treat),                                 // ← from Treatment
+      destType: mapDestType(treat, dname),                          // ← pass name too
       destId:   String(did || ''),
       destName: _norm(dname)
     };
@@ -532,7 +551,7 @@
                   data.forEach(function(tr){
                     var c = readRowCells(tr); if (!c) return;
                     var tnDigits = (c.phone||'').replace(/[^\d]/g,''); if (!tnDigits || seen.has(tnDigits)) return; seen.add(tnDigits);
-                    var type = mapDestType(c.treatment);
+                    var type = mapDestType(c.treatment, c.destination);   // ← name-aware
                     var id   = (type==='User' || type==='AA' || type==='Queue') ? extFromDestination(c.destination) : '';
                     rows.push({
                       id:       'n'+tnDigits.slice(-8),
@@ -555,7 +574,7 @@
                 dt.rows({ page:'current' }).every(function(){
                   var c = readRowCells(this.node()); if (!c) return;
                   var tnDigits = (c.phone||'').replace(/[^\d]/g,''); if(!tnDigits || seen.has(tnDigits)) return; seen.add(tnDigits);
-                  var type = mapDestType(c.treatment);
+                  var type = mapDestType(c.treatment, c.destination);     // ← name-aware
                   var id   = (type==='User' || type==='AA' || type==='Queue') ? extFromDestination(c.destination) : '';
                   out.push({
                     id:       'n'+tnDigits.slice(-8),
@@ -604,14 +623,14 @@
         if (!Array.isArray(list) || !list.length) throw new Error('Endpoint returned no items: '+base);
         const rows = list.map(function(x,i){
           const typeRaw = x.dest_type || x.owner_type || x.type || x.destination_type || x.treatment;
-          const type    = mapDestType(typeRaw);
           const nameRaw = x.dest_name || x.owner_name || x.destination_name || x.destination || x.notes || '';
+          const type    = mapDestType(typeRaw, nameRaw);                // ← name-aware
           const idRaw   = x.dest_id   || x.owner_id   || x.destination_id || x.owner_ext || x.ext
                           || (type==='User'||type==='AA'||type==='Queue' ? extFromDestination(nameRaw) : '');
           return {
             id:       x.id || x.uuid || ('num'+i),
             number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
-            label:    x.label || x.alias || _norm(nameRaw),     // fallback label = Destination
+            label:    x.label || x.alias || _norm(nameRaw),              // fallback label = Destination
             destType: type,
             destId:   String(idRaw || ''),
             destName: _norm(nameRaw)
@@ -728,180 +747,164 @@
 
   /* ---------- virtual list ---------- */
   function mountVirtualList(container, items, rowH, rightLabel){
-  container.innerHTML='';
-  container.className='rows';
+    container.innerHTML='';
+    container.className='rows';
 
-  var pad = make('div','vpad');
-  pad.style.height = (items.length * rowH) + 'px';
+    var pad = make('div','vpad');
+    pad.style.height = (items.length * rowH) + 'px';
 
-  var rows = make('div');
-  rows.style.position = 'absolute';
-  rows.style.left = 0; rows.style.right = 0; rows.style.top = 0;
+    var rows = make('div');
+    rows.style.position = 'absolute';
+    rows.style.left = 0; rows.style.right = 0; rows.style.top = 0;
 
-  container.appendChild(pad);
-  container.appendChild(rows);
+    container.appendChild(pad);
+    container.appendChild(rows);
 
-  function draw(){
-    var top = container.scrollTop, h = container.clientHeight;
-    var start = Math.max(0, Math.floor(top / rowH) - 4);
-    var end = Math.min(items.length, start + Math.ceil(h / rowH) + 8);
+    function draw(){
+      var top = container.scrollTop, h = container.clientHeight;
+      var start = Math.max(0, Math.floor(top / rowH) - 4);
+      var end = Math.min(items.length, start + Math.ceil(h / rowH) + 8);
 
-    rows.style.transform = 'translateY(' + (start * rowH) + 'px)';
-    rows.innerHTML = '';
+      rows.style.transform = 'translateY(' + (start * rowH) + 'px)';
+      rows.innerHTML = '';
 
-    for (var i = start; i < end; i++){
-      var it = items[i];
-      var row = make('div','row');
+      for (var i = start; i < end; i++){
+        var it = items[i];
+        var row = make('div','row');
 
-      var left = make(
-        'div',
-        null,
-        '<div class="row-num">' + it.number + '</div>' +
-        (it.label ? '<div class="muted">' + it.label + '</div>' : '')
-      );
-      row.appendChild(left);
+        var left = make(
+          'div',
+          null,
+          '<div class="row-num">' + it.number + '</div>' +
+          (it.label ? '<div class="muted">' + it.label + '</div>' : '')
+        );
+        row.appendChild(left);
 
-      // Only add right cell if a non-empty label is passed
-      if (rightLabel) row.appendChild(make('div','muted', rightLabel));
+        if (rightLabel) row.appendChild(make('div','muted', rightLabel)); // only if provided
 
-      rows.appendChild(row);
+        rows.appendChild(row);
+      }
     }
+
+    container.addEventListener('scroll', draw);
+    draw();
+    return { redraw: draw };
   }
 
-  container.addEventListener('scroll', draw);
-  draw();
-  return { redraw: draw };
-}
-
-
   /* ---------- mount UI (left column with expand) ---------- */
-/* ---------- mount UI (left column with expand) ---------- */
-function cvIntelliRoutingMount(root){
-  try{
-    root.innerHTML='';
-    var wrap=make('div','ir');
-    wrap.innerHTML =
-      '<div class="ir-left">'
-    +   '<div class="ir-h1">Destinations</div>'
-    +   '<input id="ir-q" class="ir-search" placeholder="Search destination or number…"/>'
-    +   '<div class="ir-filters">'
-    +     '<span data-ft="all" class="chip active">All</span>'
-    +     '<span data-ft="User" class="chip">User</span>'
-    +     '<span data-ft="Queue" class="chip">Queue</span>'
-    +     '<span data-ft="AA" class="chip">Auto Attendant</span>'
-    +     '<span data-ft="External" class="chip">External</span>'
-    +     '<span data-ft="VM" class="chip">Voicemail</span>'
-    +   '</div>'
-    +   '<div class="list-outer"><div id="ir-groups"></div></div>'
-    +   '<div id="ir-count" class="muted" style="margin-top:6px"></div>'
-    + '</div>';
-    root.appendChild(wrap);
+  function cvIntelliRoutingMount(root){
+    try{
+      root.innerHTML='';
+      var wrap=make('div','ir');
+      wrap.innerHTML =
+        '<div class="ir-left">'
+      +   '<div class="ir-h1">Destinations</div>'
+      +   '<input id="ir-q" class="ir-search" placeholder="Search destination or number…"/>'
+      +   '<div class="ir-filters">'
+      +     '<span data-ft="all" class="chip active">All</span>'
+      +     '<span data-ft="User" class="chip">User</span>'
+      +     '<span data-ft="Queue" class="chip">Queue</span>'
+      +     '<span data-ft="AA" class="chip">Auto Attendant</span>'
+      +     '<span data-ft="External" class="chip">External</span>'
+      +     '<span data-ft="VM" class="chip">Voicemail</span>'
+      +   '</div>'
+      +   '<div class="list-outer"><div id="ir-groups"></div></div>'
+      +   '<div id="ir-count" class="muted" style="margin-top:6px"></div>'
+      + '</div>';
+      root.appendChild(wrap);
 
-    // (optional) preview drawer scaffold
-    var drawer=document.getElementById('ir-drawer');
-    if(!drawer){
-      drawer=document.createElement('div');
-      drawer.id='ir-drawer'; drawer.className='drawer';
-      drawer.innerHTML='<div class="drawer-h"><div id="ir-drawer-title">Preview</div><button class="drawer-x" title="Close">×</button></div><div class="drawer-b" id="ir-drawer-body"></div>';
-      root.appendChild(drawer);
-      drawer.querySelector('.drawer-x').addEventListener('click', function(){ drawer.classList.remove('open'); });
-    }
-
-    var groups=[], viewGroups=[], openKey=null;
-
-    function titleFor(g){
-      return (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
-    }
-
-    function renderCard(g){
-      var title  = titleFor(g);
-      var isOpen = (openKey === g.key);
-
-      var card = make('div','card');
-      card.appendChild(make('div','left-bar'));
-
-      var hdr  = make('div','card-h');
-
-      var left = make('div','hdr-left');
-      left.appendChild(make('div','card-title', title));
-      left.appendChild(make('span','dest-badge', g.type));
-      hdr.appendChild(left);
-
-      var right = make('div','hdr-right');
-      right.appendChild(make('span','count-badge', g.count + ' number' + (g.count===1?'':'s')));
-      var btn = make('button','btn', isOpen ? 'Collapse' : 'Expand');
-      right.appendChild(btn);
-      hdr.appendChild(right);
-
-      card.appendChild(hdr);
-
-      var body = make('div','card-b');
-      if (isOpen){
-        card.classList.add('open');
-
-        // Export CSV for just this destination (Number,Destination)
-        var acts = make('div','card-actions');
-        var exportBtn = make('button','btn','Export CSV');
-        exportBtn.onclick = function(){
-          var dest = (title || '').replace(/"/g,'""');
-          var csv  = 'Number,Destination\n';
-          for (var i=0;i<g.numbers.length;i++){
-            csv += '"' + g.numbers[i].number + '","' + dest + '"\n';
-          }
-          var blob = new Blob([csv], {type:'text/csv'});
-          var url  = URL.createObjectURL(blob);
-          var a    = document.createElement('a');
-          a.href = url;
-          a.download = (g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_');
-          a.click();
-          setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
-        };
-        acts.appendChild(exportBtn);
-        body.appendChild(acts);
-
-        // mini list (no #ext on right)
-        var rowsHost = make('div','rows');
-        body.appendChild(rowsHost);
-        mountVirtualList(rowsHost, g.numbers, 32, null);
+      var drawer=document.getElementById('ir-drawer');
+      if(!drawer){
+        drawer=document.createElement('div');
+        drawer.id='ir-drawer'; drawer.className='drawer';
+        drawer.innerHTML='<div class="drawer-h"><div id="ir-drawer-title">Preview</div><button class="drawer-x" title="Close">×</button></div><div class="drawer-b" id="ir-drawer-body"></div>';
+        root.appendChild(drawer);
+        drawer.querySelector('.drawer-x').addEventListener('click', function(){ drawer.classList.remove('open'); });
       }
 
-      card.appendChild(body);
+      var groups=[], viewGroups=[], openKey=null;
 
-      btn.onclick = function(){ openKey = isOpen ? null : g.key; renderGroups(); };
-      return card;
-    }
-
-    function renderGroups(){
-      var host=document.getElementById('ir-groups');
-      host.innerHTML='';
-      for(var i=0;i<viewGroups.length;i++) host.appendChild(renderCard(viewGroups[i]));
-      document.getElementById('ir-count').textContent =
-        viewGroups.length + ' destination group' + (viewGroups.length===1?'':'s');
-    }
-
-    function applyFilters(){
-      var term=_normKey(document.getElementById('ir-q').value||'');
-      var chips=document.querySelectorAll('#cv-intelli-root .chip'), i, type='all';
-      for(i=0;i<chips.length;i++){
-        if(chips[i].classList.contains('active')){ type=chips[i].getAttribute('data-ft')||'all'; break; }
+      function titleFor(g){
+        return (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
       }
-      viewGroups=[];
-      for(i=0;i<groups.length;i++){
-        var g=groups[i]; if(type!=='all' && g.type!==type) continue;
-        var t = titleFor(g);
-        var match=!term || (t && _normKey(t).indexOf(term)>=0);
-        if(!match && /[0-9]/.test(term)){
-          for(var j=0;j<g.numbers.length;j++){
-            if(_normKey(g.numbers[j].number).indexOf(term)>=0){ match=true; break; }
-          }
-          if(!match && g.id && _normKey(String(g.id)).indexOf(term)>=0) match=true;
+
+      function renderCard(g){
+        var title  = titleFor(g);
+        var isOpen = (openKey === g.key);
+
+        var card = make('div','card'); card.appendChild(make('div','left-bar'));
+        var hdr  = make('div','card-h');
+
+        var left = make('div','hdr-left');
+        left.appendChild(make('div','card-title', title));
+        left.appendChild(make('span','dest-badge', g.type === 'AA' ? 'Auto Attendant' : g.type));
+        hdr.appendChild(left);
+
+        var right = make('div','hdr-right');
+        right.appendChild(make('span','count-badge', g.count + ' number' + (g.count===1?'':'s')));
+        var btn = make('button','btn', isOpen ? 'Collapse' : 'Expand');
+        right.appendChild(btn);
+        hdr.appendChild(right);
+        card.appendChild(hdr);
+
+        var body = make('div','card-b');
+        if (isOpen){
+          card.classList.add('open');
+
+          var acts = make('div','card-actions');
+          var exportBtn = make('button','btn','Export CSV');
+          exportBtn.onclick = function(){
+            var dest = (title || '').replace(/"/g,'""');
+            var csv  = 'Number,Destination\n';
+            for (var i=0;i<g.numbers.length;i++){
+              csv += '"' + g.numbers[i].number + '","' + dest + '"\n';
+            }
+            var blob = new Blob([csv], {type:'text/csv'});
+            var url  = URL.createObjectURL(blob);
+            var a    = document.createElement('a');
+            a.href = url;
+            a.download = (g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_');
+            a.click();
+            setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+          };
+          acts.appendChild(exportBtn);
+          body.appendChild(acts);
+
+          // mini list (no #ext on right — destination is already in the title)
+          var rowsHost = make('div','rows');
+          body.appendChild(rowsHost);
+          mountVirtualList(rowsHost, g.numbers, 32, null);
         }
-        if(match) viewGroups.push(g);
-      }
-      renderGroups();
-    }
 
-      /* events */
+        card.appendChild(body);
+        btn.onclick = function(){ openKey = isOpen ? null : g.key; renderGroups(); };
+        return card;
+      }
+
+      function renderGroups(){
+        var host=document.getElementById('ir-groups'); host.innerHTML='';
+        for(var i=0;i<viewGroups.length;i++) host.appendChild(renderCard(viewGroups[i]));
+        document.getElementById('ir-count').textContent = viewGroups.length + ' destination group' + (viewGroups.length===1?'':'s');
+      }
+
+      function applyFilters(){
+        var term=_normKey(document.getElementById('ir-q').value||'');
+        var chips=document.querySelectorAll('#cv-intelli-root .chip'), i, type='all';
+        for(i=0;i<chips.length;i++){ if(chips[i].classList.contains('active')){ type=chips[i].getAttribute('data-ft')||'all'; break; } }
+        viewGroups=[];
+        for(i=0;i<groups.length;i++){
+          var g=groups[i]; if(type!=='all' && g.type!==type) continue;
+          var t = titleFor(g);
+          var match=!term || (t && _normKey(t).indexOf(term)>=0);
+          if(!match && /[0-9]/.test(term)){
+            for(var j=0;j<g.numbers.length;j++){ if(_normKey(g.numbers[j].number).indexOf(term)>=0){ match=true; break; } }
+            if(!match && g.id && _normKey(String(g.id)).indexOf(term)>=0) match=true;
+          }
+          if(match) viewGroups.push(g);
+        }
+        renderGroups();
+      }
+
       document.getElementById('ir-q').addEventListener('input', applyFilters);
       var chips = wrap.querySelectorAll('.chip');
       chips.forEach(function(ch){ ch.addEventListener('click', function(){
@@ -909,7 +912,6 @@ function cvIntelliRoutingMount(root){
         this.classList.add('active'); applyFilters();
       });});
 
-      /* boot */
       loadInventory().then(async function(rows){
         groups = groupByDestination(rows||[]);
         try { window.__cvUserDir = await loadUserDirectory(); } catch(e){ log('user names not resolved:', e && e.message ? e.message : e); }
@@ -931,3 +933,4 @@ function cvIntelliRoutingMount(root){
   }
   window.cvIntelliRoutingMount = cvIntelliRoutingMount;
 })();
+
