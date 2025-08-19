@@ -337,12 +337,13 @@
 
 /* ===================== Intelli Routing — COMPLETE DROP-IN (compact + drawer) ===================== */
 /* ===================== Intelli Routing — COMPLETE DROP-IN (compact + drawer) ===================== */
+/* ===================== Intelli Routing — COMPLETE DROP-IN (compact + drawer) ===================== */
 ;(function(){
   "use strict";
 
   /* ---------- config ---------- */
-  window.cvIntelliExportUrl   = window.cvIntelliExportUrl   || '/portal/inventory/export.csv';
-  window.cvIntelliPreferMode  = window.cvIntelliPreferMode  || 'export'; // 'export' | 'api' | 'scrape'
+  window.cvIntelliExportUrl  = window.cvIntelliExportUrl  || '/portal/inventory/export.csv';
+  window.cvIntelliPreferMode = window.cvIntelliPreferMode || 'export'; // 'export' | 'api' | 'scrape'
   var __cvInvPromise = null;
 
   /* ---------- helpers ---------- */
@@ -357,7 +358,8 @@
     const ct=(r.headers.get('content-type')||'').toLowerCase();
     if(!r.ok) throw new Error('HTTP '+r.status+' on '+url);
     if(ct.includes('application/json')||ct.includes('text/json')) return r.json();
-    const txt=await r.text(); throw new Error('Non-JSON response from '+url+' — "'+txt.slice(0,80)+'…"');
+    const txt=await r.text();
+    throw new Error('Non-JSON response from '+url+' — "'+txt.slice(0,80)+'…"');
   }
   function formatTN(s){
     s=(s||'').replace(/[^\d]/g,''); if(s.length===11 && s[0]==='1') s=s.slice(1);
@@ -365,60 +367,96 @@
   }
   function _norm(v){ return (v==null?'':String(v)).trim(); }
   function _normKey(v){ return _norm(v).toLowerCase(); }
+  function extFromDestination(s){ var m=String(s||'').match(/\b(\d{3,6})\b/); return m?m[1]:''; }
 
-  // pull an extension/id out of "201 (Hannibal Lecter)" / "300 (Main Routing)" / "Text (755)" / "... Ext 755"
-  function extFromDestination(s){
-    s=_norm(s);
-    var m = s.match(/\((\d{2,6})\)\s*$/) 
-         || s.match(/\bExt(?:ension)?\s*[:#]?\s*(\d{2,6})\b/i)
-         || s.match(/\b(\d{2,6})\b(?!.*\b\d{2,6}\b)/); // last number in the string
-    return m ? m[1] : '';
-  }
-
-  /* ---------- classification helpers ---------- */
+  /* ---------- classification (treatment-first) ---------- */
   function isAAString(s){
     s = _normKey(s);
-    if(!s) return false;
-    return /\b(aa|ivr|auto[\s\-_]*attendant|attendant\s*menu|call\s*menu|main\s*menu|digital\s*receptionist|receptionist)\b/.test(s)
-        || /^text\s*\(\d{2,6}\)/i.test(s); // your “Text (755)” case
+    if (!s) return false;
+    return /\b(aa|ivr|auto[\s\-_]*attendant|attendant\s*menu|call\s*menu|main\s*menu|digital\s*receptionist|receptionist)\b/.test(s);
   }
-  function isQueueString(s){
-    s = _normKey(s); if(!s) return false;
-    return /\b(queue|call\s*queue|acd)\b/.test(s);
-  }
-  function isVMString(s){
-    s = _normKey(s); if(!s) return false;
-    return /\b(vm|voice\s*mail|voicemail)\b/.test(s);
-  }
-  function normalizeTreatment(t){
-    t = _normKey(t);
-    if (!t) return '';
-    if (isQueueString(t)) return 'Queue';
-    if (isVMString(t))    return 'VM';
-    if (/\b(available\s*number|unassigned)\b/.test(t)) return 'External';
-    if (/\b(external|pstn|sip|route|number)\b/.test(t) || /number$/.test(t)) return 'External';
-    if (/\b(user|person|extension)\b/.test(t)) return 'User';
-    if (/\bauto[\s\-_]*attendant\b/.test(t)) return 'AA';
-    return t.replace(/\s+/g,' ').replace(/\b\w/g,c=>c.toUpperCase()); // e.g. “Auto Attendant”
-  }
-
-  // final classifier with overrides from AA directory and heuristics
-  function classifyType(treatmentRaw, name, notes, ext, aaDir){
-    var t = normalizeTreatment(treatmentRaw);
-    // 1) hard override: AA directory by extension
-    if (aaDir && aaDir.extSet && ext && aaDir.extSet.has(ext)) return 'AA';
-    // 2) when export lies (“User” but actually AA), look at name/notes
-    if ((t === 'User' || !t) && (isAAString(name) || isAAString(notes))) return 'AA';
-    // 3) trust clean types
-    if (t) return t;
-    // 4) last resort from name
-    if (isQueueString(name)) return 'Queue';
-    if (isVMString(name))    return 'VM';
-    if (isAAString(name))    return 'AA';
+  function mapDestTypeFromTreatment(t, name){
+    var tt = _normKey(t), nn=_normKey(name);
+    if (/\b(queue|call ?queue|acd)\b/.test(tt)) return 'Queue';
+    if (/\b(voicemail|voice ?mail|vm)\b/.test(tt)) return 'VM';
+    if (/\b(available number|unassigned)\b/.test(tt)) return 'External';
+    if (/\b(external|pstn|sip|route|number)\b/.test(tt) || /number$/.test(tt)) return 'External';
+    if (/\b(user|person|extension)\b/.test(tt)) return 'User';
+    if (isAAString(tt) || isAAString(nn)) return 'AA';
     return 'External';
   }
+  function typeTitle(t){
+    return (t==='AA') ? 'Auto Attendant'
+         : (t==='VM') ? 'Voicemail'
+         : (t==='Queue') ? 'Queue'
+         : (t==='User') ? 'User'
+         : 'External';
+  }
 
-  /* ---------- CSV helpers (Inventory → rows) ---------- */
+  /* ---------- attendants scraper (truth for AA) ---------- */
+  async function loadAutoAttendants(){
+    // cache ~5 minutes
+    if (window.__cvAAMapCache && (Date.now() - window.__cvAAMapCache.t < 5*60*1000)) {
+      return window.__cvAAMapCache.map;
+    }
+    return new Promise(function(resolve, reject){
+      try{
+        var frame=document.getElementById('cv-intelli-aa-frame');
+        if(frame && frame.parentNode) frame.parentNode.removeChild(frame);
+        frame=document.createElement('iframe');
+        frame.id='cv-intelli-aa-frame';
+        frame.src='/portal/attendants';
+        frame.setAttribute('aria-hidden','true');
+        Object.assign(frame.style, { position:'fixed', left:'-9999px', top:'-9999px', width:'1px', height:'1px', opacity:'0' });
+        document.body.appendChild(frame);
+
+        var done=false, to=setTimeout(function(){ if(done) return; done=true; cleanup(); reject(new Error('AA page timed out')); }, 30000);
+        function cleanup(){ clearTimeout(to); if(frame && frame.parentNode) frame.parentNode.removeChild(frame); }
+
+        frame.onload=function(){
+          try{
+            var doc=frame.contentWindow.document;
+            var tables = doc.querySelectorAll('#content table, #content .table, table');
+            var picked=null, nameIdx=0, extIdx=1;
+
+            // pick a table whose headers look like Name/Extension; fallback to first table
+            for(var i=0;i<tables.length;i++){
+              var ths=[].map.call(tables[i].querySelectorAll('thead th'), function(th){ return _normKey(th.textContent); });
+              if(ths.length){
+                var ni=ths.findIndex(x=>/name/.test(x)), ei=ths.findIndex(x=>/ext/i.test(x));
+                if(ni>=0 && ei>=0){ picked=tables[i]; nameIdx=ni; extIdx=ei; break; }
+              }
+            }
+            if(!picked) picked=tables[0];
+            if(!picked){ done=true; cleanup(); return resolve({ byExt:Object.create(null) }); }
+
+            // guess columns if no thead
+            if(picked && !picked.querySelector('thead')){
+              // screenshot shows Name, Extension, Timeframe
+              nameIdx=0; extIdx=1;
+            }
+
+            var rows=picked.querySelectorAll('tbody tr, tr');
+            var byExt=Object.create(null);
+            for(var r=0;r<rows.length;r++){
+              var tds=rows[r].querySelectorAll('td,th'); if(!tds || tds.length<2) continue;
+              var nm=_norm(tds[nameIdx] ? tds[nameIdx].textContent : '');
+              var ex=_norm(tds[extIdx]  ? tds[extIdx].textContent  : '');
+              ex=ex.replace(/[^\d]/g,'');
+              if(!ex || !/^\d{3,6}$/.test(ex) || !nm) continue;
+              byExt[ex]=nm;
+            }
+            done=true; cleanup();
+            var map={ byExt: byExt };
+            window.__cvAAMapCache = { t: Date.now(), map: map };
+            resolve(map);
+          }catch(e){ if(done) return; done=true; cleanup(); reject(e); }
+        };
+      }catch(ex){ reject(ex); }
+    });
+  }
+
+  /* ---------- CSV → rows ---------- */
   function parseCSV(text) {
     text = String(text || '');
     if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
@@ -437,26 +475,24 @@
                .map(r => { var o = {}; for (var j=0; j<headers.length; j++) o[headers[j]] = (r[j] || '').trim(); return o; });
   }
 
-  function mapExportRecord(rec, aaDir){
+  function mapExportRecord(rec) {
     function pick(o, ks) { for (var k of ks) if (o[k] != null && String(o[k]).trim() !== '') return String(o[k]).trim(); return ''; }
     var phone = pick(rec, ['Phone Number','Phone','Number','TN','DID','DNIS']);
     var treat = pick(rec, ['Treatment','Routing','Type','Destination Type','Owner Type']);
-    var dname = pick(rec, ['Destination','Destination Name','Owner','Owner Name','Description']);
-    var notes = pick(rec, ['Notes','Comment']);
+    var dname = pick(rec, ['Destination','Destination Name','Owner','Owner Name','Notes','Description']);
     var did   = pick(rec, ['Dest ID','Destination ID','Owner ID','Extension','Ext','Login','Username','User ID']);
-    var ext   = did || extFromDestination(dname);
+    if (!did && dname) did = extFromDestination(dname);
     var digits = (phone || '').replace(/[^\d]/g,'');
     var label  = pick(rec, ['Label','Alias','Tag']) || dname;
 
-    var finalType = classifyType(treat, dname, notes, ext, aaDir);
-
     return {
-      id:       (rec.id || rec.uuid || ('n' + (digits || '').slice(-8))),
-      number:   formatTN(phone),
-      label:    label,
-      destType: finalType,
-      destId:   String(ext || did || ''),
-      destName: _norm(dname)
+      id:        (rec.id || rec.uuid || ('n' + (digits || '').slice(-8))),
+      number:    formatTN(phone),
+      label:     label,
+      treatment: treat,
+      destType:  mapDestTypeFromTreatment(treat, dname),
+      destId:    String(did || ''),
+      destName:  _norm(dname)
     };
   }
 
@@ -480,75 +516,18 @@
     return '/portal/inventory/export.csv';
   }
 
-  /* ---------- Auto Attendants directory (API → scrape fallback) ---------- */
-  async function loadAADirectory(){
-    // try JSON endpoints
-    const candidates = [
-      '/portal/api/auto_attendants',
-      '/portal/api/v1/auto_attendants',
-      '/portal/api/attendants',
-      '/api/auto_attendants'
-    ];
-    for (let i=0;i<candidates.length;i++){
-      try{
-        const raw  = await fetchJSON(addParam(candidates[i],'limit','5000'));
-        const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.attendants || []);
-        if (Array.isArray(list) && list.length){
-          const byExt = Object.create(null), extSet = new Set();
-          list.forEach(a=>{
-            const name = _norm(a.name || a.display_name || a.title);
-            const ext  = _norm(a.ext || a.extension || a.id || '');
-            if (ext) { byExt[ext] = name ? (name + ' ('+ext+')') : ('AA ('+ext+')'); extSet.add(ext); }
-          });
-          return { byExt, extSet };
-        }
-      }catch(_){}
-    }
-    // scrape UI
-    return new Promise(function(resolve){
-      try{
-        var frame=document.getElementById('cv-intelli-aaframe');
-        if(frame && frame.parentNode) frame.parentNode.removeChild(frame);
-        frame=document.createElement('iframe');
-        frame.id='cv-intelli-aaframe';
-        frame.src='/portal/auto_attendants';
-        frame.setAttribute('aria-hidden','true');
-        Object.assign(frame.style,{position:'fixed',left:'-9999px',top:'-9999px',width:'1px',height:'1px',opacity:'0'});
-        document.body.appendChild(frame);
-        var done=false; function finish(x){ if(done) return; done=true; try{ frame.remove(); }catch(_){ } resolve(x||{ byExt:{}, extSet:new Set() }); }
-        frame.onload=function(){
-          try{
-            var doc=frame.contentWindow.document;
-            var rows=[].slice.call(doc.querySelectorAll('table tr, .list tbody tr, .table tr'));
-            var byExt=Object.create(null), extSet=new Set();
-            rows.forEach(function(tr){
-              var tds=tr.querySelectorAll?tr.querySelectorAll('td,th'):[];
-              if (tds.length<2) return;
-              var name=(tds[0].textContent||'').trim();
-              var ext='';
-              for (var i=1;i<tds.length;i++){ var m=(tds[i].textContent||'').match(/\b(\d{2,6})\b/); if(m){ ext=m[1]; break; } }
-              if (ext){ byExt[ext]=name? (name+' ('+ext+')') : ('AA ('+ext+')'); extSet.add(ext); }
-            });
-            finish({ byExt, extSet });
-          }catch(_){ finish(); }
-        };
-        setTimeout(function(){ finish(); }, 30000);
-      }catch(_){ resolve({ byExt:{}, extSet:new Set() }); }
-    });
-  }
-
-  /* ---------- inventory loaders ---------- */
-  async function loadInventoryViaExport(aaDir) {
+  async function loadInventoryViaExport() {
     const exp = await probeExportUrl();
     const res = await fetch(exp, { credentials: 'include', headers: { 'Accept': 'text/csv, */*' } });
     if (!res.ok) throw new Error('HTTP ' + res.status + ' fetching export CSV');
     const txt  = await res.text();
-    const rows = parseCSV(txt).map(function(r){ return mapExportRecord(r, aaDir); });
+    const rows = parseCSV(txt).map(mapExportRecord);
     if (!rows.length) throw new Error('Export CSV parsed, but no rows found');
-    window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() };
+    window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() }; // cache 5m
     return rows;
   }
 
+  /* ---------- numbers via API or iframe (fallback) ---------- */
   var NUMBERS_URL = window.cvIntelliNumbersUrl || null;
   async function probeNumbersUrl(){
     if (NUMBERS_URL) return NUMBERS_URL;
@@ -558,16 +537,120 @@
       '/api/numbers','/ns-api/numbers','/portal/number/list'
     ];
     for (let i=0;i<candidates.length;i++){
-      try{
+      try {
         const data = await fetchJSON(addParam(candidates[i], 'limit', '25'));
         const list = Array.isArray(data) ? data : (data.items || data.results || data.data || data.numbers);
         if (Array.isArray(list)) { log('numbers endpoint:', candidates[i]); NUMBERS_URL = candidates[i]; return NUMBERS_URL; }
-      }catch(_){}
+      } catch(_) {}
     }
     throw new Error('No JSON endpoint; falling back to iframe scrape.');
   }
 
-  async function loadInventory(aaDir){
+  function scrapeInventoryViaIframe(){
+    return new Promise(function(resolve, reject){
+      try{
+        if (window.__cvIntelliNumCache && (Date.now() - window.__cvIntelliNumCache.t < 5*60*1000)) {
+          return resolve(window.__cvIntelliNumCache.rows.slice());
+        }
+        var frame=document.getElementById('cv-intelli-invframe');
+        if(frame && frame.parentNode) frame.parentNode.removeChild(frame);
+        frame=document.createElement('iframe');
+        frame.id='cv-intelli-invframe';
+        frame.src='/portal/inventory';
+        frame.setAttribute('aria-hidden','true');
+        Object.assign(frame.style, { position:'fixed', left:'-9999px', top:'-9999px', width:'1px', height:'1px', opacity:'0' });
+        document.body.appendChild(frame);
+
+        var killed=false, timeout=setTimeout(function(){ cleanup(); reject(new Error('Inventory iframe timed out')); }, 45000);
+        function cleanup(){ if(killed) return; killed=true; clearTimeout(timeout); if(frame && frame.parentNode) frame.parentNode.removeChild(frame); }
+
+        frame.onload=function(){
+          try{
+            var win=frame.contentWindow, doc=win.document, tries=0;
+            (function waitDT(){
+              tries++;
+              var $=win.jQuery||win.$;
+              var table=doc.querySelector('table.dataTable')||doc.querySelector('table');
+              if($ && $.fn && $.fn.dataTable && table) hook($, table);
+              else if(tries<160) setTimeout(waitDT, 250);
+              else { cleanup(); reject(new Error('Inventory table not found')); }
+            })();
+
+            function readRowCells(tr){
+              var tds = tr && tr.querySelectorAll ? tr.querySelectorAll('td,th') : [];
+              if (tds.length < 3) return null;
+              return {
+                phone: (tds[0].textContent||'').trim(),
+                treatment: (tds[1].textContent||'').trim(),
+                destination: (tds[2].textContent||'').trim()
+              };
+            }
+
+            function hook($, table){
+              var dt = $(table).DataTable ? $(table).DataTable() :
+                       ($(table).dataTable && $(table).dataTable().api ? $(table).dataTable().api() : null);
+              if(!dt){ cleanup(); return reject(new Error('DataTables not active on inventory table')); }
+
+              try {
+                var settings = dt.settings()[0];
+                if (settings && !settings.oFeatures.bServerSide) {
+                  var data = dt.rows({ search:'applied' }).nodes().toArray();
+                  var rows = [], seen = new Set();
+                  data.forEach(function(tr){
+                    var c = readRowCells(tr); if (!c) return;
+                    var tnDigits = (c.phone||'').replace(/[^\d]/g,''); if (!tnDigits || seen.has(tnDigits)) return; seen.add(tnDigits);
+                    var did  = extFromDestination(c.destination);
+                    var type = mapDestTypeFromTreatment(c.treatment, c.destination);
+                    rows.push({
+                      id:       'n'+tnDigits.slice(-8),
+                      number:   formatTN(c.phone),
+                      label:    _norm(c.destination),
+                      treatment: c.treatment,
+                      destType: type,
+                      destId:   String(did || ''),
+                      destName: _norm(c.destination)
+                    });
+                  });
+                  cleanup();
+                  window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() };
+                  return resolve(rows);
+                }
+              } catch(_) { /* fall through */ }
+
+              try{ dt.page.len(200).draw(false); }catch(_){}
+              var out=[], seen=new Set();
+              function collectPage(){
+                dt.rows({ page:'current' }).every(function(){
+                  var c = readRowCells(this.node()); if (!c) return;
+                  var tnDigits = (c.phone||'').replace(/[^\d]/g,''); if(!tnDigits || seen.has(tnDigits)) return; seen.add(tnDigits);
+                  var did  = extFromDestination(c.destination);
+                  var type = mapDestTypeFromTreatment(c.treatment, c.destination);
+                  out.push({
+                    id:       'n'+tnDigits.slice(-8),
+                    number:   formatTN(c.phone),
+                    label:    _norm(c.destination),
+                    treatment: c.treatment,
+                    destType: type,
+                    destId:   String(did || ''),
+                    destName: _norm(c.destination)
+                  });
+                });
+              }
+              $(table).on('draw.dt', function(){
+                collectPage();
+                var info=dt.page.info();
+                if(info.page < info.pages-1) dt.page('next').draw(false);
+                else { cleanup(); window.__cvIntelliNumCache = { t: Date.now(), rows: out.slice() }; resolve(out); }
+              });
+              collectPage(); dt.draw(false);
+            }
+          }catch(e){ cleanup(); reject(e); }
+        };
+      }catch(ex){ reject(ex); }
+    });
+  }
+
+  async function loadInventory(){
     if (window.__cvIntelliNumCache && (Date.now() - window.__cvIntelliNumCache.t < 5*60*1000)) {
       return window.__cvIntelliNumCache.rows.slice();
     }
@@ -576,7 +659,7 @@
     __cvInvPromise = (async () => {
       if ((window.cvIntelliPreferMode || 'export') !== 'api') {
         try {
-          const rows = await loadInventoryViaExport(aaDir);
+          const rows = await loadInventoryViaExport();
           if (rows && rows.length) return rows;
         } catch (e) {
           log('Export CSV failed — falling back:', e && e.message ? e.message : e);
@@ -589,16 +672,17 @@
         const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
         if (!Array.isArray(list) || !list.length) throw new Error('Endpoint returned no items: '+base);
         const rows = list.map(function(x,i){
-          const typeRaw = x.dest_type || x.owner_type || x.type || x.destination_type || x.treatment;
+          const typeRaw = x.treatment || x.dest_type || x.owner_type || x.type || x.destination_type;
           const nameRaw = x.dest_name || x.owner_name || x.destination_name || x.destination || x.notes || '';
-          const ext     = String(x.dest_id || x.owner_id || x.destination_id || x.owner_ext || x.ext || extFromDestination(nameRaw) || '');
-          const type    = classifyType(typeRaw, nameRaw, x.notes || '', ext, aaDir);
+          const type    = mapDestTypeFromTreatment(typeRaw, nameRaw);
+          const idRaw   = x.owner_ext || x.ext || x.dest_id || x.owner_id || x.destination_id || extFromDestination(nameRaw);
           return {
             id:       x.id || x.uuid || ('num'+i),
             number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
             label:    x.label || x.alias || _norm(nameRaw),
+            treatment: typeRaw || '',
             destType: type,
-            destId:   ext,
+            destId:   String(idRaw || ''),
             destName: _norm(nameRaw)
           };
         });
@@ -608,159 +692,20 @@
         log('API numbers failed — falling back to iframe scrape:', apiErr && apiErr.message ? apiErr.message : apiErr);
       }
 
-      // last-resort: scrape UI (kept as-is, but still feeds classifyType with aaDir)
-      return new Promise(function(resolve, reject){
-        try{
-          var frame=document.getElementById('cv-intelli-invframe');
-          if(frame && frame.parentNode) frame.parentNode.removeChild(frame);
-          frame=document.createElement('iframe');
-          frame.id='cv-intelli-invframe';
-          frame.src='/portal/inventory';
-          frame.setAttribute('aria-hidden','true');
-          Object.assign(frame.style,{position:'fixed',left:'-9999px',top:'-9999px',width:'1px',height:'1px',opacity:'0'});
-          document.body.appendChild(frame);
-
-          var killed=false, timeout=setTimeout(function(){ cleanup(); reject(new Error('Inventory iframe timed out')); }, 45000);
-          function cleanup(){ if(killed) return; killed=true; clearTimeout(timeout); try{ frame.remove(); }catch(_){ } }
-
-          frame.onload=function(){
-            try{
-              var win=frame.contentWindow, doc=win.document, tries=0;
-              (function waitDT(){
-                tries++;
-                var $=win.jQuery||win.$;
-                var table=doc.querySelector('table.dataTable')||doc.querySelector('table');
-                if($ && $.fn && $.fn.dataTable && table) hook($, table);
-                else if(tries<160) setTimeout(waitDT, 250);
-                else { cleanup(); reject(new Error('Inventory table not found')); }
-              })();
-
-              function readRowCells(tr){
-                var tds = tr && tr.querySelectorAll ? tr.querySelectorAll('td,th') : [];
-                if (tds.length < 3) return null;
-                return {
-                  phone: (tds[0].textContent||'').trim(),
-                  treatment: (tds[1].textContent||'').trim(),
-                  destination: (tds[2].textContent||'').trim(),
-                  notes: (tds[3] && tds[3].textContent||'').trim()
-                };
-              }
-
-              function hook($, table){
-                var dt = $(table).DataTable ? $(table).DataTable() :
-                         ($(table).dataTable && $(table).dataTable().api ? $(table).dataTable().api() : null);
-                if(!dt){ cleanup(); return reject(new Error('DataTables not active on inventory table')); }
-
-                var out=[], seen=new Set();
-                function collectPage(){
-                  dt.rows({ page:'current' }).every(function(){
-                    var c = readRowCells(this.node()); if (!c) return;
-                    var tnDigits = (c.phone||'').replace(/[^\d]/g,''); if(!tnDigits || seen.has(tnDigits)) return; seen.add(tnDigits);
-                    var ext  = extFromDestination(c.destination);
-                    var type = classifyType(c.treatment, c.destination, c.notes, ext, aaDir);
-                    out.push({
-                      id:       'n'+tnDigits.slice(-8),
-                      number:   formatTN(c.phone),
-                      label:    _norm(c.destination),
-                      destType: type,
-                      destId:   String(ext || ''),
-                      destName: _norm(c.destination)
-                    });
-                  });
-                }
-                $(table).on('draw.dt', function(){
-                  collectPage();
-                  var info=dt.page.info();
-                  if(info.page < info.pages-1) dt.page('next').draw(false);
-                  else { cleanup(); window.__cvIntelliNumCache = { t: Date.now(), rows: out.slice() }; resolve(out); }
-                });
-                try{ dt.page.len(200).draw(false); }catch(_){}
-                collectPage(); dt.draw(false);
-              }
-            }catch(e){ cleanup(); reject(e); }
-          };
-        }catch(ex){ reject(ex); }
-      });
+      return await scrapeInventoryViaIframe();
     })().finally(function(){ __cvInvPromise = null; });
 
     return __cvInvPromise;
   }
 
-  /* ---------- users directory (unchanged, just for nicer User titles) ---------- */
-  var USERS_URL = window.cvIntelliUsersUrl || null;
-  async function probeUsersUrl(){
-    if (USERS_URL) return USERS_URL;
-    const candidates = ['/portal/api/users','/portal/api/v1/users','/portal/ajax/users','/portal/ajax/user/list','/api/users','/ns-api/users'];
-    for (let i=0;i<candidates.length;i++){
-      try {
-        const data = await fetchJSON(addParam(candidates[i], 'limit', '1'));
-        const list = Array.isArray(data) ? data : (data.items || data.results || data.data || data.users);
-        if (Array.isArray(list)) { log('users endpoint:', candidates[i]); USERS_URL = candidates[i]; return USERS_URL; }
-      } catch(_) {}
-    }
-    throw new Error('No users JSON endpoint; will try UI scrape.');
-  }
-  function mkUserDisplay(u){
-    const ext   = _norm(u.ext || u.extension || u.exten || u.login || u.username);
-    const first = _norm(u.first_name || u.first);
-    const last  = _norm(u.last_name  || u.last);
-    const base  = _norm(u.display_name || u.full_name || u.name || ((first||last)?(first+' '+last).trim():'')); 
-    const id    = _norm(u.id || u.user_id || u.uuid || u.uid || ext);
-    const label = base || ('User ' + (ext || id));
-    return { id, ext, label: ext ? (label + ' ('+ext+')') : label };
-  }
-  async function scrapeUsersViaIframe(){
-    return new Promise(function(resolve, reject){
-      try{
-        var frame=document.getElementById('cv-intelli-usersframe');
-        if(frame && frame.parentNode) frame.parentNode.removeChild(frame);
-        frame=document.createElement('iframe');
-        frame.id='cv-intelli-usersframe';
-        frame.src='/portal/users';
-        frame.setAttribute('aria-hidden','true');
-        Object.assign(frame.style, { position:'fixed', left:'-9999px', top:'-9999px', width:'1px', height:'1px', opacity:'0' });
-        document.body.appendChild(frame);
-
-        var killed=false, timeout=setTimeout(function(){ cleanup(); resolve({ byId:{}, byExt:{} }); }, 30000);
-        function cleanup(){ if(killed) return; killed=true; clearTimeout(timeout); try{ frame.remove(); }catch(_){ } }
-
-        frame.onload=function(){
-          try{
-            var doc=frame.contentWindow.document;
-            var rows=[].slice.call(doc.querySelectorAll('table tr, .list tbody tr, .table tr'));
-            var byId=Object.create(null), byExt=Object.create(null);
-            rows.forEach(function(tr){
-              var tds=tr.querySelectorAll ? tr.querySelectorAll('td,th') : []; if(!tds || tds.length<2) return;
-              var text=[].map.call(tds, td=> (td.textContent||'').trim());
-              var name=(text[0]||'').trim(); var ext='';
-              for(var i=1;i<text.length;i++){ var m=text[i].match(/\b(\d{2,6})\b/); if(m){ ext=m[1]; break; } }
-              if(!name || !ext) return;
-              var id=ext; var label=name+' ('+ext+')';
-              byId[id]=label; byExt[ext]=label;
-            });
-            cleanup(); resolve({ byId, byExt });
-          }catch(e){ cleanup(); resolve({ byId:{}, byExt:{} }); }
-        };
-      }catch(ex){ resolve({ byId:{}, byExt:{} }); }
-    });
-  }
-  async function loadUserDirectory(){
-    try{
-      const url = await probeUsersUrl();
-      const raw = await fetchJSON(addParam(url, 'limit', '5000'));
-      const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.users || []);
-      const byId=Object.create(null), byExt=Object.create(null);
-      list.forEach(u => { const d=mkUserDisplay(u); if(d.id) byId[d.id]=d.label; if(d.ext) byExt[d.ext]=d.label; });
-      return { byId, byExt };
-    }catch(_){
-      return await scrapeUsersViaIframe();
-    }
-  }
-  function nameForUserGroup(g, dir){
-    if (dir && dir.byId && dir.byId[g.id]) return dir.byId[g.id];
-    if (dir && dir.byExt && /^\d{2,6}$/.test(g.id) && dir.byExt[g.id]) return dir.byExt[g.id];
-    if (_norm(g.name) && _norm(g.name).toLowerCase()!=='user') return g.name;
-    return g.id ? ('User '+g.id) : 'User';
+  /* ---------- display label builder ---------- */
+  function buildDisplayLabel(row){
+    // Special case: Available Number (don’t append a destination)
+    if (/^available number/i.test(_norm(row.treatment))) return 'Available Number';
+    var title = typeTitle(row.destType);
+    var dest  = _norm(row.destName);
+    if (!dest && row.destId) dest = row.destId;
+    return dest ? (title + ' ' + dest) : title;
   }
 
   /* ---------- grouping ---------- */
@@ -775,14 +720,14 @@
       var key = type + '|' + keyPart;
 
       if (!map[key]) map[key] = { key, type, id, name, numbers: [] };
-      map[key].numbers.push({ id:r.id, number:r.number, label:(r.label || r.destName || '') });
+      map[key].numbers.push({ id:r.id, number:r.number, label:(r.display || r.label || r.destName || '') });
     }
     for (var k in map){ if (Object.prototype.hasOwnProperty.call(map,k)) { map[k].count = map[k].numbers.length; out.push(map[k]); } }
     out.sort(function(a,b){ return b.count - a.count || (a.type > b.type ? 1 : -1) || (_normKey(a.name) > _normKey(b.name) ? 1 : -1); });
     return out;
   }
 
-  /* ---------- virtual list (left number, right description) ---------- */
+  /* ---------- virtual list ---------- */
   function mountVirtualList(container, items, rowH, right) {
     container.innerHTML = '';
     container.className  = 'rows';
@@ -800,7 +745,7 @@
     function rightTextOf(it, i){
       if (typeof right === 'function') return right(it, i) || '';
       if (right === true)              return it.label || '';
-      return right || '';
+      return right || (it.label || '');
     }
 
     function draw(){
@@ -815,8 +760,10 @@
         var it  = items[i];
         var row = make('div','row');
 
+        // LEFT: number only
         row.appendChild(make('div','row-left','<div class="row-num">'+ it.number +'</div>'));
 
+        // RIGHT: description/label
         var rt = rightTextOf(it, i);
         if (rt) row.appendChild(make('div','muted row-right', rt));
 
@@ -865,6 +812,12 @@
       function titleFor(g){
         return (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
       }
+      function nameForUserGroup(g, dir){
+        if (dir && dir.byId && dir.byId[g.id]) return dir.byId[g.id];
+        if (dir && dir.byExt && /^\d{2,6}$/.test(g.id) && dir.byExt[g.id]) return dir.byExt[g.id];
+        if (_norm(g.name) && _norm(g.name).toLowerCase()!=='user') return g.name;
+        return g.id ? ('User '+g.id) : 'User';
+      }
 
       function renderCard(g){
         var title  = titleFor(g);
@@ -881,8 +834,8 @@
         var right = make('div','hdr-right');
         right.appendChild(make('span','count-badge', g.count + ' number' + (g.count===1?'':'s')));
         var btn = make('button','btn', isOpen ? 'Collapse' : 'Expand');
+        right.appendChild(btn);
         hdr.appendChild(right);
-        hdr.appendChild(btn);
         card.appendChild(hdr);
 
         var body = make('div','card-b');
@@ -900,12 +853,15 @@
             var blob = new Blob([csv], {type:'text/csv'});
             var url  = URL.createObjectURL(blob);
             var a    = document.createElement('a');
-            a.href = url; a.download = (g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_'); a.click();
+            a.href = url;
+            a.download = (g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_');
+            a.click();
             setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
           };
           acts.appendChild(exportBtn);
           body.appendChild(acts);
 
+          // mini list (destination/description on the right)
           var rowsHost = make('div','rows');
           body.appendChild(rowsHost);
           mountVirtualList(rowsHost, g.numbers, 32, function(it){ return it.label || ''; });
@@ -947,33 +903,117 @@
         this.classList.add('active'); applyFilters();
       });});
 
-      (async function(){
-        try{
-          const aaDir = await loadAADirectory();              // ← load AA list first
-          window.__cvAADir = aaDir;
+      // Load inventory + attendants, then apply AA override and display labels
+      Promise.all([loadInventory(), loadAutoAttendants()]).then(async function(res){
+        var rows = res[0] || [];
+        var aa   = res[1] || { byExt: {} };
+        var aaby = (aa && aa.byExt) ? aa.byExt : {};
 
-          const rows  = await loadInventory(aaDir);           // ← classify with AA override
-          groups = groupByDestination(rows||[]);
-
-          try { window.__cvUserDir = await loadUserDirectory(); } catch(_){}
-
-          applyFilters();
-        }catch(err){
-          var msg='<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
-            + '<div style="font-weight:600; margin-bottom:6px;">Could not load phone number inventory</div>'
-            + '<div style="margin-bottom:6px;">' + (err && err.message ? err.message : err) + '</div>'
-            + '<div style="font-size:12px;">Set endpoints if known:<br>'
-            + '<code>window.cvIntelliNumbersUrl = "/exact/numbers/path";</code><br>'
-            + '<code>window.cvIntelliUsersUrl   = "/exact/users/path";</code><br>'
-            + 'then click the tile again.</div>'
-            + '</div>';
-          root.innerHTML = msg;
+        // AA override + display labels
+        for (var i=0;i<rows.length;i++){
+          var r = rows[i];
+          var ext = r.destId || extFromDestination(r.destName) || '';
+          if (ext && aaby[ext]) {
+            r.destType = 'AA';
+            r.destName = aaby[ext] + ' (' + ext + ')';
+          } else {
+            // ensure type still derives from treatment if not overridden
+            r.destType = mapDestTypeFromTreatment(r.treatment, r.destName);
+          }
+          r.display = buildDisplayLabel(r);
         }
-      })();
+
+        groups = groupByDestination(rows);
+        // Optional: user directory (only helps User titles)
+        try { window.__cvUserDir = await loadUserDirectory(); } catch(e){ log('user names not resolved:', e && e.message ? e.message : e); }
+        applyFilters();
+      }).catch(function(err){
+        var msg='<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
+          + '<div style="font-weight:600; margin-bottom:6px;">Could not load phone number inventory</div>'
+          + '<div style="margin-bottom:6px;">' + (err && err.message ? err.message : err) + '</div>'
+          + '<div style="font-size:12px;">Set endpoints if known:<br>'
+          + '<code>window.cvIntelliNumbersUrl = "/exact/numbers/path";</code><br>'
+          + '<code>window.cvIntelliUsersUrl   = "/exact/users/path";</code><br>then click the tile again.</div>'
+          + '</div>';
+        root.innerHTML = msg;
+      });
+
     }catch(e){
       try{ root.innerHTML='<div style="color:#a00">Mount error: '+(e && e.message ? e.message : e)+'</div>'; }catch(_){}
       console.error(e);
     }
   }
   window.cvIntelliRoutingMount = cvIntelliRoutingMount;
+
+  /* ---------- users (unchanged, but kept local) ---------- */
+  var USERS_URL = window.cvIntelliUsersUrl || null;
+  async function probeUsersUrl(){
+    if (USERS_URL) return USERS_URL;
+    const candidates = ['/portal/api/users','/portal/api/v1/users','/portal/ajax/users','/portal/ajax/user/list','/api/users','/ns-api/users'];
+    for (let i=0;i<candidates.length;i++){
+      try {
+        const data = await fetchJSON(addParam(candidates[i], 'limit', '1'));
+        const list = Array.isArray(data) ? data : (data.items || data.results || data.data || data.users);
+        if (Array.isArray(list)) { log('users endpoint:', candidates[i]); USERS_URL = candidates[i]; return USERS_URL; }
+      } catch(_) {}
+    }
+    throw new Error('No users JSON endpoint; will try UI scrape.');
+  }
+  function mkUserDisplay(u){
+    const ext   = _norm(u.ext || u.extension || u.exten || u.login || u.username);
+    const first = _norm(u.first_name || u.first);
+    const last  = _norm(u.last_name  || u.last);
+    const base  = _norm(u.display_name || u.full_name || u.name || ((first||last)?(first+' '+last).trim():'')); 
+    const id    = _norm(u.id || u.user_id || u.uuid || u.uid || ext);
+    const label = base || ('User ' + (ext || id));
+    return { id, ext, label: ext ? (label + ' ('+ext+')') : label };
+  }
+  async function scrapeUsersViaIframe(){
+    return new Promise(function(resolve, reject){
+      try{
+        var frame=document.getElementById('cv-intelli-usersframe');
+        if(frame && frame.parentNode) frame.parentNode.removeChild(frame);
+        frame=document.createElement('iframe');
+        frame.id='cv-intelli-usersframe';
+        frame.src='/portal/users';
+        frame.setAttribute('aria-hidden','true');
+        Object.assign(frame.style, { position:'fixed', left:'-9999px', top:'-9999px', width:'1px', height:'1px', opacity:'0' });
+        document.body.appendChild(frame);
+
+        var killed=false, timeout=setTimeout(function(){ cleanup(); reject(new Error('Users iframe timed out')); }, 30000);
+        function cleanup(){ if(killed) return; killed=true; clearTimeout(timeout); if(frame && frame.parentNode) frame.parentNode.removeChild(frame); }
+
+        frame.onload=function(){
+          try{
+            var doc=frame.contentWindow.document;
+            var rows=[].slice.call(doc.querySelectorAll('table tr, .list tbody tr, .table tr'));
+            var byId=Object.create(null), byExt=Object.create(null);
+            rows.forEach(function(tr){
+              var tds=tr.querySelectorAll ? tr.querySelectorAll('td,th') : []; if(!tds || tds.length<2) return;
+              var text=[].map.call(tds, td=> (td.textContent||'').trim());
+              var name=(text[0]||'').trim(); var ext='';
+              for(var i=1;i<text.length;i++){ var m=text[i].match(/\b(\d{2,6})\b/); if(m){ ext=m[1]; break; } }
+              if(!name || !ext) return;
+              var id=ext; var label=name+' ('+ext+')';
+              byId[id]=label; byExt[ext]=label;
+            });
+            cleanup(); resolve({ byId, byExt });
+          }catch(e){ cleanup(); reject(e); }
+        };
+      }catch(ex){ reject(ex); }
+    });
+  }
+  async function loadUserDirectory(){
+    try{
+      const url = await probeUsersUrl();
+      const raw = await fetchJSON(addParam(url, 'limit', '5000'));
+      const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.users || []);
+      const byId=Object.create(null), byExt=Object.create(null);
+      list.forEach(u => { const d=mkUserDisplay(u); if(d.id) byId[d.id]=d.label; if(d.ext) byExt[d.ext]=d.label; });
+      return { byId, byExt };
+    }catch(e){
+      log('users JSON failed — scraping UI:', e && e.message ? e.message : e);
+      return await scrapeUsersViaIframe();
+    }
+  }
 })();
