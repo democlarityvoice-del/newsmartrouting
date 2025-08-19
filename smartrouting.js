@@ -529,6 +529,58 @@ function buildDisplayLabel(row){
     return rows;
   }
 
+ async function loadInventory(){
+  // use 5-minute cache if present
+  if (window.__cvIntelliNumCache && (Date.now() - window.__cvIntelliNumCache.t < 5*60*1000)) {
+    return window.__cvIntelliNumCache.rows.slice();
+  }
+  if (__cvInvPromise) return __cvInvPromise;
+
+  __cvInvPromise = (async () => {
+    // Prefer CSV export unless explicitly set to API
+    if ((window.cvIntelliPreferMode || 'export') !== 'api') {
+      try {
+        const rows = await loadInventoryViaExport();
+        if (rows && rows.length) return rows;
+      } catch (e) { log('Export CSV failed — falling back:', e && e.message ? e.message : e); }
+    }
+
+    // Try JSON API
+    try {
+      const base = await probeNumbersUrl();
+      const raw  = await fetchJSON(addParam(base, 'limit', '5000'));
+      const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
+      if (!Array.isArray(list) || !list.length) throw new Error('Endpoint returned no items: '+base);
+
+      const rows = list.map(function(x,i){
+        const typeRaw = x.treatment || x.dest_type || x.owner_type || x.type || x.destination_type;
+        const nameRaw = x.dest_name || x.owner_name || x.destination_name || x.destination || x.notes || '';
+        const type    = mapDestTypeFromTreatment(typeRaw, nameRaw);
+        const idRaw   = x.owner_ext || x.ext || x.dest_id || x.owner_id || x.destination_id
+                        || ((type==='User'||type==='AA'||type==='Queue') ? extFromDestination(nameRaw) : '');
+        return {
+          id:        x.id || x.uuid || ('num'+i),
+          number:    formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
+          label:     _norm(nameRaw),
+          treatment: typeRaw || '',
+          destType:  type,
+          destId:    String(idRaw || ''),
+          destName:  _norm(nameRaw)
+        };
+      });
+      window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() };
+      return rows;
+    } catch(apiErr){
+      log('API numbers failed — falling back to iframe scrape:', apiErr && apiErr.message ? apiErr.message : apiErr);
+    }
+
+    // Final fallback: scrape Inventory UI
+    return await scrapeInventoryViaIframe();
+  })().finally(function(){ __cvInvPromise = null; });
+
+  return __cvInvPromise;
+}
+ 
   /* ---------- numbers via API or iframe (fallback) ---------- */
   var NUMBERS_URL = window.cvIntelliNumbersUrl || null;
   async function probeNumbersUrl(){
@@ -652,35 +704,6 @@ function buildDisplayLabel(row){
     });
   }
 
-// BEGIN REPLACE: inventory load + AA merge
-loadInventory().then(async function(rows){
-  // Pull AA extensions once; cached & fail-safe
-  var aaSet = await loadAAIndex();
-
-  // Re-type AAs that the CSV mislabeled as User, based on extension match
-  rows.forEach(function(r){
-    if (r && r.destType === 'User') {
-      var ext = r.destId || extFromDestination(r.destName || r.label);
-      if (ext && aaSet.has(ext)) r.destType = 'AA';
-    }
-    // Build final display label: "Treatment Name + Destination Name"
-    r.label = buildDisplayLabel(r);
-  });
-
-  groups = groupByDestination(rows || []);
-  try { window.__cvUserDir = await loadUserDirectory(); } catch(e){ log('user names not resolved:', e && e.message ? e.message : e); }
-  applyFilters();
-}).catch(function(err){
-  var msg='<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
-    + '<div style="font-weight:600; margin-bottom:6px;">Could not load phone number inventory</div>'
-    + '<div style="margin-bottom:6px;">' + (err && err.message ? err.message : err) + '</div>'
-    + '<div style="font-size:12px;">If your environment requires fixed endpoints:<br>'
-    + '<code>window.cvIntelliNumbersUrl = "/exact/numbers/path";</code><br>'
-    + '<code>window.cvIntelliUsersUrl   = "/exact/users/path";</code><br>then click the tile again.</div>'
-    + '</div>';
-  root.innerHTML = msg;
-});
-// END REPLACE
 
 
 
@@ -861,46 +884,56 @@ loadInventory().then(async function(rows){
       });});
 
       // Load inventory + attendants, then apply AA override and display labels
-      Promise.all([loadInventory(), loadAutoAttendants()]).then(async function(res){
-        var rows = res[0] || [];
-        var aa   = res[1] || { byExt: {} };
-        var aaby = (aa && aa.byExt) ? aa.byExt : {};
+     // Load inventory, merge AA index, then render
+loadInventory().then(async function(rows){
+  var aaSet = await loadAAIndex();
 
-        // AA override + display labels
-        for (var i=0;i<rows.length;i++){
-          var r = rows[i];
-          var ext = r.destId || extFromDestination(r.destName) || '';
-          if (ext && aaby[ext]) {
-            r.destType = 'AA';
-            r.destName = aaby[ext] + ' (' + ext + ')';
-          } else {
-            // ensure type still derives from treatment if not overridden
-            r.destType = mapDestTypeFromTreatment(r.treatment, r.destName);
-          }
-          r.display = buildDisplayLabel(r);
-        }
+  rows.forEach(function(r){
+    if (r && r.destType === 'User') {
+      var ext = r.destId || extFromDestination(r.destName || r.label);
+      if (ext && aaSet.has(ext)) r.destType = 'AA';
+    }
+    // Build final display label: "Treatment Name + Destination Name"
+    r.label = buildDisplayLabel(r);
+  });
 
-        groups = groupByDestination(rows);
-        // Optional: user directory (only helps User titles)
-        try { window.__cvUserDir = await loadUserDirectory(); } catch(e){ log('user names not resolved:', e && e.message ? e.message : e); }
-        applyFilters();
-      }).catch(function(err){
-        var msg='<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
-          + '<div style="font-weight:600; margin-bottom:6px;">Could not load phone number inventory</div>'
-          + '<div style="margin-bottom:6px;">' + (err && err.message ? err.message : err) + '</div>'
-          + '<div style="font-size:12px;">Set endpoints if known:<br>'
-          + '<code>window.cvIntelliNumbersUrl = "/exact/numbers/path";</code><br>'
-          + '<code>window.cvIntelliUsersUrl   = "/exact/users/path";</code><br>then click the tile again.</div>'
-          + '</div>';
-        root.innerHTML = msg;
-      });
-
-    }catch(e){
-      try{ root.innerHTML='<div style="color:#a00">Mount error: '+(e && e.message ? e.message : e)+'</div>'; }catch(_){}
-      console.error(e);
+  function groupByDestination(rows){
+  var map = Object.create(null), out = [];
+  rows.forEach(function(r){
+    var type = r.destType || 'External';
+    var id   = _norm(r.destId);
+    var name = _norm(r.destName);
+    var key  = type + '|' + (id ? ('id:'+id) : ('name:'+_normKey(name)));
+    if (!map[key]) map[key] = { key, type, id, name, numbers: [] };
+    map[key].numbers.push({ id:r.id, number:r.number, label:(r.label || r.destName || '') });
+  });
+  for (var k in map){
+    if (Object.prototype.hasOwnProperty.call(map,k)) {
+      map[k].count = map[k].numbers.length;
+      out.push(map[k]);
     }
   }
-  window.cvIntelliRoutingMount = cvIntelliRoutingMount;
+  out.sort(function(a,b){
+    return b.count - a.count
+        || (a.type > b.type ? 1 : -1)
+        || (_normKey(a.name) > _normKey(b.name) ? 1 : -1);
+  });
+  return out;
+}
+
+  groups = groupByDestination(rows || []);
+  try { window.__cvUserDir = await loadUserDirectory(); } catch(e){ log('user names not resolved:', e && e.message ? e.message : e); }
+  applyFilters();
+}).catch(function(err){
+  var msg='<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
+    + '<div style="font-weight:600; margin-bottom:6px;">Could not load phone number inventory</div>'
+    + '<div style="margin-bottom:6px;">' + (err && err.message ? err.message : err) + '</div>'
+    + '<div style="font-size:12px;">If your environment requires fixed endpoints:<br>'
+    + '<code>window.cvIntelliNumbersUrl = "/exact/numbers/path";</code><br>'
+    + '<code>window.cvIntelliUsersUrl   = "/exact/users/path";</code><br>then click the tile again.</div>'
+    + '</div>';
+  root.innerHTML = msg;
+});
 
   /* ---------- users (unchanged, but kept local) ---------- */
   var USERS_URL = window.cvIntelliUsersUrl || null;
