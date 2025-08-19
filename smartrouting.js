@@ -255,6 +255,19 @@
     return root;
   }
 
+  /* compact in-card expand view */
+#cv-intelli-root .ir-right{display:none!important;}                 /* hide right column */
+#cv-intelli-root .ir-left{width:520px!important;max-width:620px!important;}
+
+#cv-intelli-root .card-b .rows{
+  max-height:180px!important;     /* small scroll area */
+  overflow:auto!important;
+  border:1px solid #eee!important;
+  border-radius:8px!important;
+}
+#cv-intelli-root .row{height:32px!important;}
+#cv-intelli-root .card-actions{margin-bottom:8px!important;}
+
   /* ------- Banner / Title helpers ------- */
   var _bannerEls = [], _origBannerTexts = [];
   function collectBannerEls(){
@@ -968,6 +981,21 @@
   // Also listen for legacy event
   window.addEventListener('cv:intelli-routing:open', openOverlay, false);
 
+  (function(){
+  function fixLabels(root){
+    if(!root) return;
+    root.querySelectorAll('.card-h .btn').forEach(function(btn){
+      var t=(btn.textContent||'').trim();
+      if(t==='Select') btn.textContent='Expand';
+    });
+  }
+  // run now + watch for re-renders
+  var root=document.getElementById('cv-intelli-root');
+  fixLabels(root);
+  new MutationObserver(function(){ fixLabels(root); })
+    .observe(document.documentElement,{subtree:true,childList:true});
+})();
+
   /* ===================== NAV BUTTON (robust) ===================== */
   (function insertNavButton(){
     try{
@@ -1022,4 +1050,7 @@
   })();
 
 })();
+
+
+
 
