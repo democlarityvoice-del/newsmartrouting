@@ -537,6 +537,8 @@
 /* ===================== Intelli Routing — COMPLETE DROP-IN ===================== */
 ;(function(){
   "use strict";
+window.cvIntelliExportUrl = '/portal/inventory/export.csv';
+window.cvIntelliPreferMode = 'export'; // 'export' | 'api' | 'scrape'
 
   /* ---------- tiny helpers ---------- */
   function log(){ try{ console.log.apply(console, ['[Intelli]'].concat([].slice.call(arguments))); }catch(_){} }
@@ -707,6 +709,10 @@
       }catch(ex){ reject(ex); }
     });
   }
+
+// Put near the top of your script (before loadInventory/probeExportUrl)
+window.cvIntelliExportUrl = '/portal/inventory/export.csv';
+window.cvIntelliPreferMode = 'export'; // 'export' | 'api' | 'scrape'
 
   async function loadInventory(){
     try {
