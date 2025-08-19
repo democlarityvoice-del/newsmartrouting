@@ -1,118 +1,44 @@
-/* ===================== Intelli Routing (compact/drop-in) ===================== */
+/* ===================== NAV BUTTON (robust, jQuery-free, self-healing, lazy loader) ===================== */
+;(function(){
+  "use strict";
 
-// ===== Intelli Routing bootstrap (no scrolling) ===== iframe- fixed
-;(function () {
-  try {
-    // wait until the nav exists
-    function when(pred, fn) {
-      if (pred()) return fn();
-      var obs = new MutationObserver(function () {
-        if (pred()) { obs.disconnect(); fn(); }
-      });
-      obs.observe(document.documentElement, { childList: true, subtree: true });
-      var iv = setInterval(function () {
-        if (pred()) { clearInterval(iv); fn(); }
-      }, 300);
-    }
+  function insertNavButton(){
+    var container = document.querySelector('#nav-buttons');
+    if (!container || document.getElementById('nav-intelli-routing')) return;
 
-    function start() {
-      if (document.getElementById('nav-intelli-routing')) return; // no duplicates
+    var template = document.getElementById('nav-music') || container.querySelector('li');
+    if (!template) return;
 
-      var $container = $('#nav-buttons');
-      if (!$container.length) return;
+    var el = template.cloneNode(true);
+    el.id = 'nav-intelli-routing';
 
-      // choose a template tile to clone
-      var $template = $('#nav-music');
-      if (!$template.length) $template = $container.children('li').first();
-      if (!$template.length) return;
-
-      var $new = $template.clone(false, false);
-      $new.attr('id', 'nav-intelli-routing');
-
-      var $a = $new.find('a').first()
-        .attr('id', 'nav-intelli-routing-link')
-        .attr('href', '#')
-        .attr('title', 'Intelli Routing');
-
-      // label
-      $new.find('.nav-text').text('Intelli Routing');
-
-      // icon
-      $new.find('.nav-bg-image').css({
-        '-webkit-mask-image': "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')",
-        'mask-image':         "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')",
-        '-webkit-mask-repeat':'no-repeat',
-        'mask-repeat':        'no-repeat',
-        '-webkit-mask-position':'center 48%',
-        'mask-position':      'center 48%',
-        '-webkit-mask-size':  '71% 71%',
-        'mask-size':          '71% 71%',
-        'background-color':   'rgba(255,255,255,0.92)'
-      });
-
-      // click → lazy-load Smart Routing script once, then signal open
-      $a.off('click.intelli').on('click.intelli', function (e) {
-        e.preventDefault();
-        if (!window.__cvIntelliLoaded) {
-          var s = document.createElement('script');
+    var a = el.querySelector('a');
+    if (!a) { a = document.createElement('a'); el.appendChild(a); }
+    a.id = 'nav-intelli-routing-link';
+    a.href = '#';
+    a.title = 'Intelli Routing';
+    a.addEventListener('click', function(e){
+      e.preventDefault();
+      if (!window.__cvIntelliLoaded) {
+        var s = document.getElementById('cv-intelli-loader');
+        if (!s) {
+          s = document.createElement('script');
           s.id = 'cv-intelli-loader';
           s.src = 'https://democlarityvoice-del.github.io/newsmartrouting/smartrouting.js?v=' + Date.now();
-          s.onload = function () {
-            window.__cvIntelliLoaded = true;
-            window.dispatchEvent(new CustomEvent('cv:intelli-routing:open'));
-          };
-          s.onerror = function () {
-            console.error('Failed to load Intelli Routing script');
-            alert('Could not load Intelli Routing. Check network or script URL.');
-          };
+          s.onload  = function(){ window.__cvIntelliLoaded = true; window.dispatchEvent(new CustomEvent('cv:intelli-routing:open')); };
+          s.onerror = function(){ console.error('Failed to load Intelli Routing script'); alert('Could not load Intelli Routing.'); };
           document.head.appendChild(s);
-        } else {
-          window.dispatchEvent(new CustomEvent('cv:intelli-routing:open'));
         }
-      });
-
-      // position: after Call History if present, else at end
-      var $after = $('#nav-callhistory');
-      if ($after.length) $new.insertAfter($after); else $new.appendTo($container);
-
-      console.log('Intelli Routing button inserted');
-    }
-
-    // SAFE predicate (no $) so it never crashes if jQuery isn't ready yet
-    when(function () {
-      try {
-        var c = document.querySelector('#nav-buttons');
-        return !!(c && (document.getElementById('nav-music') || c.querySelector('li')));
-      } catch (_) { return false; }
-    }, start);
-  } catch (e) {
-    console.error('Intelli button script error:', e && e.message ? e.message : e);
-  }
-})();
-
-/* --- SAFETY FALLBACK: robust, jQuery-free reinserter --- */
-;(function(){
-  function findNavContainer(){
-    var sels = ['#nav-buttons','ul#nav-buttons','.nav-buttons','nav #nav-buttons','#navigation #nav-buttons'];
-    for (var i=0;i<sels.length;i++){ var el = document.querySelector(sels[i]); if (el) return el; }
-    return null;
-  }
-  function insertIfMissing(){
-    if (document.getElementById('nav-intelli-routing')) return;
-    var container = findNavContainer(); if (!container) return;
-
-    var template = document.getElementById('nav-music') || container.querySelector('li'); if (!template) return;
-    var el = template.cloneNode(true); el.id = 'nav-intelli-routing';
-
-    var a = el.querySelector('a'); if (!a) { a = document.createElement('a'); el.appendChild(a); }
-    a.id = 'nav-intelli-routing-link'; a.href = '#'; a.title = 'Intelli Routing';
-    a.addEventListener('click', function(e){ e.preventDefault(); window.dispatchEvent(new CustomEvent('cv:intelli-routing:open')); });
+      } else {
+        window.dispatchEvent(new CustomEvent('cv:intelli-routing:open'));
+      }
+    });
 
     var txt = el.querySelector('.nav-text'); if (txt) txt.textContent = 'Intelli Routing';
     var bg  = el.querySelector('.nav-bg-image'); if (bg){
       bg.style.webkitMaskImage = "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')";
       bg.style.maskImage       = "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')";
-      bg.style.webkitMaskRepeat= 'no-repeat'; bg.style.maskRepeat='no-repeat';
+      bg.style.webkitMaskRepeat='no-repeat'; bg.style.maskRepeat='no-repeat';
       bg.style.webkitMaskPosition='center 48%'; bg.style.maskPosition='center 48%';
       bg.style.webkitMaskSize='71% 71%'; bg.style.maskSize='71% 71%';
       bg.style.backgroundColor='rgba(255,255,255,0.92)';
@@ -122,12 +48,27 @@
     if (after && after.parentNode===container) container.insertBefore(el, after.nextSibling);
     else container.appendChild(el);
 
-    console.log('Intelli Routing button inserted (fallback)');
+    console.log('Intelli Routing button inserted');
   }
-  insertIfMissing();
-  if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', insertIfMissing);
-  new MutationObserver(insertIfMissing).observe(document.documentElement,{childList:true,subtree:true});
+
+  // wait for nav container, then insert
+  (function whenNav(){
+    var nav = document.querySelector('#nav-buttons');
+    if (nav) insertNavButton();
+    else {
+      var obs = new MutationObserver(function(){
+        if (document.querySelector('#nav-buttons')) { obs.disconnect(); insertNavButton(); }
+      });
+      obs.observe(document.documentElement, { childList:true, subtree:true });
+    }
+  })();
+
+  // self-heal if DOM changes or the button gets removed
+  new MutationObserver(function(){
+    if (document.querySelector('#nav-buttons') && !document.getElementById('nav-intelli-routing')) insertNavButton();
+  }).observe(document.documentElement, { childList:true, subtree:true });
 })();
+
 
 /* ===== Intelli Routing — Overlay (dock; scoped; banner/title swap; active state) ===== */
 /* ===== Intelli Routing — Overlay (dock; scoped; banner/title swap; active state) ===== */
