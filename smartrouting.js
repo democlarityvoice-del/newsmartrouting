@@ -130,6 +130,7 @@
 })();
 
 /* ===== Intelli Routing — Overlay (dock; scoped; banner/title swap; active state) ===== */
+/* ===== Intelli Routing — Overlay (dock; scoped; banner/title swap; active state) ===== */
 ;(function(){
   var DEFAULT_ACCENT = '#f89406';
   var DEFAULT_TINT   = '#FDE8CC';
@@ -140,15 +141,18 @@
       '#cv-intelli-root{display:none; --cv-accent:'+DEFAULT_ACCENT+'; --cv-tint:'+DEFAULT_TINT+';}',
       '#cv-intelli-root.dock{position:absolute; inset:0; z-index:9999}',
       '#cv-intelli-root.float{position:fixed; inset:0; z-index:999999}',
-      '#cv-intelli-root .cv-back{position:absolute; inset:0; background:#fff; opacity:1}',
+      '#cv-intelli-root .cv-back{position:absolute; inset:0; background:#fff; opacity:1}', /* solid backdrop */
       '#cv-intelli-root .cv-panel{position:absolute; inset:0; background:#fff; box-sizing:border-box; font:13px/1.35 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}',
       '#cv-intelli-root.float .cv-panel{margin:4% auto; max-width:1040px; height:auto; border-radius:12px; box-shadow:0 8px 40px rgba(0,0,0,.12)}',
+
+      /* hide the portal’s orange banner (we already have the grey title bar) */
       '#cv-intelli-root .cv-h{display:none}',
       '#cv-intelli-root .cv-b{padding:10px 12px; height:100%; overflow:auto}',
 
-      /* scoped UI */
+      /* compact list layout (left column only) */
       '#cv-intelli-root .ir{display:flex; gap:12px; min-height:420px}',
-      '#cv-intelli-root .ir-left{width:320px; flex:0 0 320px}',
+      '#cv-intelli-root .ir-right{display:none!important;}',
+      '#cv-intelli-root .ir-left{width:520px!important;max-width:620px!important;}',
       '#cv-intelli-root .ir-h1{font-weight:600; margin:0 0 6px; font-size:13px; color:#333}',
       '#cv-intelli-root .ir-search{width:100%; padding:6px 9px; border:1px solid #ddd; border-radius:8px}',
       '#cv-intelli-root .ir-search:focus{outline:none; box-shadow:0 0 0 3px rgba(229,112,39,.28); border-color:var(--cv-accent)}',
@@ -165,25 +169,33 @@
       '#cv-intelli-root .hdr-right{display:flex; align-items:center; gap:8px; flex-shrink:0}',
       '#cv-intelli-root .count-badge{font-size:11px; background:var(--cv-tint); color:#4a2a00; border:1px solid var(--cv-accent); border-radius:999px; padding:1px 7px; white-space:nowrap}',
       '#cv-intelli-root .dest-badge{font-size:11px; padding:1px 6px; border-radius:6px; background:var(--cv-tint); border:1px solid var(--cv-accent); white-space:nowrap}',
+
+      /* expand/collapse body */
       '#cv-intelli-root .card-b{padding:8px 12px; display:none}',
       '#cv-intelli-root .card.open .card-b{display:block}',
 
-      /* rows inside expanded card */
-      '#cv-intelli-root .card-b .rows{position:relative; max-height:180px; overflow:auto; border:1px solid #eee; border-radius:8px; background:#fff}',
+      /* mini scroller for numbers */
+      '#cv-intelli-root .rows{position:relative; max-height:180px; overflow:auto; border:1px solid #eee; border-radius:8px; background:#fff}',
       '#cv-intelli-root .vpad{height:0}',
       '#cv-intelli-root .row{display:flex; align-items:center; justify-content:space-between; height:32px; padding:0 10px; border-bottom:1px solid #f6f6f6; font-variant-numeric:tabular-nums}',
       '#cv-intelli-root .row:hover{background:#fff7f2}',
       '#cv-intelli-root .row-num{font-variant-numeric:tabular-nums}',
       '#cv-intelli-root .muted{color:#666; font-size:12px}',
+
+      /* generic buttons */
       '#cv-intelli-root .btn{cursor:pointer; border:none; background:var(--cv-accent); color:#fff; padding:7px 10px; border-radius:9px; line-height:1; font-weight:600; font-size:12px}',
       '#cv-intelli-root .btn:hover{filter:brightness(.96)}',
+      '#cv-intelli-root .btn.ghost{background:#f6f6f6; color:#333; border:1px solid #e3e3e3}',
       '#cv-intelli-root .btn:disabled{opacity:.5; cursor:not-allowed}',
-      '#cv-intelli-root .card-actions{margin-bottom:8px}',
 
-      /* hide/right-column idea if present anywhere */
-      '#cv-intelli-root .ir-right{display:none!important;}',
-      '#cv-intelli-root .ir-left{width:520px!important;max-width:620px!important;}'
+      /* preview drawer (kept, but optional) */
+      '#cv-intelli-root .drawer{position:fixed; right:24px; bottom:24px; width:560px; max-width:calc(100% - 48px); max-height:72vh; background:#fff; border:1px solid #ddd; border-radius:12px; box-shadow:0 12px 48px rgba(0,0,0,.18); transform:translateY(12px); opacity:0; pointer-events:none; transition:opacity .16s ease, transform .16s ease;}',
+      '#cv-intelli-root .drawer.open{opacity:1; transform:none; pointer-events:auto;}',
+      '#cv-intelli-root .drawer-h{padding:10px 12px; background:#fafafa; border-bottom:1px solid #eee; display:flex; align-items:center; justify-content:space-between; font-weight:600}',
+      '#cv-intelli-root .drawer-b{padding:12px; overflow:auto; max-height:calc(72vh - 44px)}',
+      '#cv-intelli-root .drawer-x{background:transparent; border:none; font-size:18px; cursor:pointer; padding:0 4px}'
     ].join('\n');
+
     var st=document.createElement('style'); st.id='cv-intelli-style'; st.type='text/css';
     st.appendChild(document.createTextNode(css)); document.head.appendChild(st);
   }
@@ -201,36 +213,6 @@
               '#container','#content_wrap','#contentWrap','#workarea','#inner-content','#engagecx-slot'];
     for(var i=0;i<sels.length;i++){ var el=document.querySelector(sels[i]); if(el && el.offsetParent!==null && el.offsetHeight>200) return el; }
     return null;
-  }
-
-  function ensureRoot(){
-    ensureStyle();
-    var host = findDockHost();
-    var mode = host ? 'dock' : 'float';
-
-    var root = document.getElementById('cv-intelli-root');
-    if (!root){
-      root = document.createElement('div');
-      root.id = 'cv-intelli-root';
-      root.innerHTML =
-        '<div class="cv-back"></div>'
-      + '<div class="cv-panel" role="dialog" aria-modal="true" aria-label="Intelli Routing">'
-      + '  <div class="cv-h"><div>Intelli Routing</div><button class="cv-x" title="Close">×</button></div>'
-      + '  <div class="cv-b"><div id="cv-intelli-mount">Loading…</div></div>'
-      + '</div>';
-
-      (host || document.body).appendChild(root);
-      function close(){ root.style.display='none'; swapBanner(false); swapNavTitle(false); setNavActiveIntelli(false); }
-      root.querySelector('.cv-back').addEventListener('click', close);
-      var x = root.querySelector('.cv-x'); if (x) x.addEventListener('click', close);
-    } else {
-      var parent = host || document.body;
-      if (root.parentNode !== parent) parent.appendChild(root);
-    }
-
-    root.className = mode;
-    if (host && getComputedStyle(host).position === 'static'){ host.style.position = 'relative'; }
-    return root;
   }
 
   /* ------- Banner / Title helpers ------- */
@@ -306,6 +288,36 @@
     }
   })();
 
+  function ensureRoot(){
+    ensureStyle();
+    var host = findDockHost();
+    var mode = host ? 'dock' : 'float';
+
+    var root = document.getElementById('cv-intelli-root');
+    if (!root){
+      root = document.createElement('div');
+      root.id = 'cv-intelli-root';
+      root.innerHTML =
+        '<div class="cv-back"></div>'
+      + '<div class="cv-panel" role="dialog" aria-modal="true" aria-label="Intelli Routing">'
+      + '  <div class="cv-h"><div>Intelli Routing</div><button class="cv-x" title="Close">×</button></div>'
+      + '  <div class="cv-b"><div id="cv-intelli-mount">Loading…</div></div>'
+      + '</div>';
+
+      (host || document.body).appendChild(root);
+      function close(){ root.style.display='none'; swapBanner(false); swapNavTitle(false); setNavActiveIntelli(false); }
+      root.querySelector('.cv-back').addEventListener('click', close);
+      var x = root.querySelector('.cv-x'); if (x) x.addEventListener('click', close);
+    } else {
+      var parent = host || document.body;
+      if (root.parentNode !== parent) parent.appendChild(root);
+    }
+
+    root.className = mode;
+    if (host && getComputedStyle(host).position === 'static'){ host.style.position = 'relative'; }
+    return root;
+  }
+
   function openOverlay(){
     var root = ensureRoot();
     root.style.display = 'block';
@@ -316,20 +328,25 @@
     var mount = document.getElementById('cv-intelli-mount');
     if (typeof window.cvIntelliRoutingMount === 'function') {
       try { window.cvIntelliRoutingMount(mount); } catch(e){ console.error('[Intelli] mount error:', e); }
+    } else {
+      console.warn('[Intelli] cvIntelliRoutingMount not a function yet');
     }
   }
+
   window.addEventListener('cv:intelli-routing:open', openOverlay, false);
   window.cvIntelliOpen = openOverlay;
 })();
 
-/* ===================== Intelli Routing — COMPLETE DROP-IN (compact) ===================== */
+/* ===================== Intelli Routing — COMPLETE DROP-IN (compact + drawer) ===================== */
 ;(function(){
   "use strict";
-  window.cvIntelliExportUrl = '/portal/inventory/export.csv';
-  window.cvIntelliPreferMode = 'export'; // 'export' | 'api' | 'scrape'
-  var __cvInvPromise = null; // single-flight for inventory
 
-  /* ---------- tiny helpers ---------- */
+  /* ---------- config ---------- */
+  window.cvIntelliExportUrl = window.cvIntelliExportUrl || '/portal/inventory/export.csv';
+  window.cvIntelliPreferMode = window.cvIntelliPreferMode || 'export'; // 'export' | 'api' | 'scrape'
+  var __cvInvPromise = null;
+
+  /* ---------- helpers ---------- */
   function log(){ try{ console.log.apply(console, ['[Intelli]'].concat([].slice.call(arguments))); }catch(_){} }
   function make(tag, cls, html){ var el=document.createElement(tag); if(cls) el.className=cls; if(html!=null) el.innerHTML=html; return el; }
   function addParam(url, key, val){
@@ -342,7 +359,7 @@
     if(!r.ok) throw new Error('HTTP '+r.status+' on '+url);
     if(ct.includes('application/json')||ct.includes('text/json')) return r.json();
     const txt=await r.text();
-    throw new Error('Non-JSON response from '+url+(r.redirected?(' (redirected to '+r.url+')'):'')+' — "'+txt.slice(0,80)+'…"');
+    throw new Error('Non-JSON response from '+url+' — "'+txt.slice(0,80)+'…"');
   }
   function formatTN(s){
     s=(s||'').replace(/[^\d]/g,''); if(s.length===11 && s[0]==='1') s=s.slice(1);
@@ -351,14 +368,18 @@
   function _norm(v){ return (v==null?'':String(v)).trim(); }
   function _normKey(v){ return _norm(v).toLowerCase(); }
 
+  /* ---------- type mapping (from Treatment) ---------- */
   function mapDestType(t){
-    t=_normKey(t);
-    if(/^user|person|extension$/.test(t)) return 'User';
-    if(/^queue|callqueue|acd$/.test(t))   return 'Queue';
-    if(/^aa|auto.?attendant|ivr$/.test(t)) return 'AA';
-    if(/^vm|voicemail$/.test(t))         return 'VM';
-    if(/^external|pstn|sip|route|number$/.test(t)) return 'External';
-    return (t ? t[0].toUpperCase()+t.slice(1) : 'External');
+    t = _normKey(t);
+    if (!t) return 'External';
+    if (/^(user|person|extension)$/.test(t))                return 'User';
+    if (/^(queue|call ?queue|acd)$/.test(t))                return 'Queue';
+    if (/^(aa|auto.?attendant|ivr)$/.test(t))               return 'AA';
+    if (/^(vm|voice ?mail|voicemail)$/.test(t))             return 'VM';
+    if (/^(available number|unassigned)$/.test(t))          return 'External';
+    if (/^(external|pstn|sip|route|number)$/.test(t))       return 'External';
+    if (/number$/.test(t))                                  return 'External';
+    return t.charAt(0).toUpperCase() + t.slice(1);
   }
 
   function extFromDestination(destText){
@@ -369,47 +390,40 @@
     return m ? m[1] : '';
   }
 
-  // ---- Export (CSV) helpers ----
+  /* ---------- CSV helpers (Inventory → rows) ---------- */
   function parseCSV(text) {
     text = String(text || '');
-    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // strip BOM
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
     var rows = [], row = [], i = 0, c, q = false, field = '';
     for (; i < text.length; i++) {
       c = text[i];
-      if (q) {
-        if (c === '"') { if (text[i+1] === '"') { field += '"'; i++; } else q = false; }
-        else field += c;
-      } else {
-        if (c === '"') q = true;
-        else if (c === ',') { row.push(field); field = ''; }
-        else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
-        else if (c === '\r') { /* ignore */ }
-        else field += c;
-      }
+      if (q) { if (c === '"') { if (text[i+1] === '"') { field += '"'; i++; } else q = false; } else field += c; }
+      else { if (c === '"') q = true;
+             else if (c === ',') { row.push(field); field = ''; }
+             else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+             else if (c !== '\r') field += c; }
     }
     row.push(field); rows.push(row);
     var headers = (rows.shift() || []).map(h => (h || '').trim());
     return rows.filter(r => r.some(x => x && String(x).trim().length))
-               .map(r => {
-                 var o = {};
-                 for (var j = 0; j < headers.length; j++) o[headers[j]] = (r[j] || '').trim();
-                 return o;
-               });
+               .map(r => { var o = {}; for (var j=0; j<headers.length; j++) o[headers[j]] = (r[j] || '').trim(); return o; });
   }
 
   function mapExportRecord(rec) {
-    function pick(o, keys) { for (var k of keys) if (o[k] != null && String(o[k]).trim() !== '') return String(o[k]).trim(); return ''; }
+    function pick(o, ks) { for (var k of ks) if (o[k] != null && String(o[k]).trim() !== '') return String(o[k]).trim(); return ''; }
     var phone = pick(rec, ['Phone Number','Phone','Number','TN','DID','DNIS']);
     var treat = pick(rec, ['Treatment','Routing','Type','Destination Type','Owner Type']);
     var dname = pick(rec, ['Destination','Destination Name','Owner','Owner Name','Notes','Description']);
     var did   = pick(rec, ['Dest ID','Destination ID','Owner ID','Extension','Ext','Login','Username','User ID']);
     if (!did && dname) did = extFromDestination(dname);
     var digits = (phone || '').replace(/[^\d]/g,'');
+    var label  = pick(rec, ['Label','Alias','Tag']) || dname;       // ← default to Destination
+
     return {
       id:       (rec.id || rec.uuid || ('n' + (digits || '').slice(-8))),
       number:   formatTN(phone),
-      label:    pick(rec, ['Label','Alias','Tag']),
-      destType: mapDestType(treat),
+      label:    label,
+      destType: mapDestType(treat),                                 // ← from Treatment
       destId:   String(did || ''),
       destName: _norm(dname)
     };
@@ -446,9 +460,8 @@
     return rows;
   }
 
-  /* ===================== DATA: NUMBERS ===================== */
+  /* ---------- numbers via API or iframe (fallback) ---------- */
   var NUMBERS_URL = window.cvIntelliNumbersUrl || null;
-
   async function probeNumbersUrl(){
     if (NUMBERS_URL) return NUMBERS_URL;
     const candidates = [
@@ -469,11 +482,9 @@
   function scrapeInventoryViaIframe(){
     return new Promise(function(resolve, reject){
       try{
-        // cache 5 min
         if (window.__cvIntelliNumCache && (Date.now() - window.__cvIntelliNumCache.t < 5*60*1000)) {
           return resolve(window.__cvIntelliNumCache.rows.slice());
         }
-
         var frame=document.getElementById('cv-intelli-invframe');
         if(frame && frame.parentNode) frame.parentNode.removeChild(frame);
         frame=document.createElement('iframe');
@@ -526,7 +537,7 @@
                     rows.push({
                       id:       'n'+tnDigits.slice(-8),
                       number:   formatTN(c.phone),
-                      label:    '',
+                      label:    _norm(c.destination),   // fallback label = Destination
                       destType: type,
                       destId:   String(id || ''),
                       destName: _norm(c.destination)
@@ -549,7 +560,7 @@
                   out.push({
                     id:       'n'+tnDigits.slice(-8),
                     number:   formatTN(c.phone),
-                    label:    '',
+                    label:    _norm(c.destination),
                     destType: type,
                     destId:   String(id || ''),
                     destName: _norm(c.destination)
@@ -581,7 +592,9 @@
         try {
           const rows = await loadInventoryViaExport();
           if (rows && rows.length) return rows;
-        } catch (e) { log('Export CSV failed — falling back:', e && e.message ? e.message : e); }
+        } catch (e) {
+          log('Export CSV failed — falling back:', e && e.message ? e.message : e);
+        }
       }
 
       try {
@@ -598,7 +611,7 @@
           return {
             id:       x.id || x.uuid || ('num'+i),
             number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
-            label:    x.label || x.alias || x.description || '',
+            label:    x.label || x.alias || _norm(nameRaw),     // fallback label = Destination
             destType: type,
             destId:   String(idRaw || ''),
             destName: _norm(nameRaw)
@@ -616,9 +629,8 @@
     return __cvInvPromise;
   }
 
-  /* ===================== DATA: USERS DIRECTORY ===================== */
+  /* ---------- users directory (for nicer User titles) ---------- */
   var USERS_URL = window.cvIntelliUsersUrl || null;
-
   async function probeUsersUrl(){
     if (USERS_URL) return USERS_URL;
     const candidates = ['/portal/api/users','/portal/api/v1/users','/portal/ajax/users','/portal/ajax/user/list','/api/users','/ns-api/users'];
@@ -631,17 +643,15 @@
     }
     throw new Error('No users JSON endpoint; will try UI scrape.');
   }
-
   function mkUserDisplay(u){
     const ext   = _norm(u.ext || u.extension || u.exten || u.login || u.username);
     const first = _norm(u.first_name || u.first);
     const last  = _norm(u.last_name  || u.last);
-    const base  = _norm(u.display_name || u.full_name || u.name || ((first||last)?(first+' '+last).trim():''));
+    const base  = _norm(u.display_name || u.full_name || u.name || ((first||last)?(first+' '+last).trim():'')); 
     const id    = _norm(u.id || u.user_id || u.uuid || u.uid || ext);
     const label = base || ('User ' + (ext || id));
     return { id, ext, label: ext ? (label + ' ('+ext+')') : label };
   }
-
   async function scrapeUsersViaIframe(){
     return new Promise(function(resolve, reject){
       try{
@@ -659,7 +669,7 @@
 
         frame.onload=function(){
           try{
-            var win=frame.contentWindow, doc=win.document;
+            var doc=frame.contentWindow.document;
             var rows=[].slice.call(doc.querySelectorAll('table tr, .list tbody tr, .table tr'));
             var byId=Object.create(null), byExt=Object.create(null);
             rows.forEach(function(tr){
@@ -677,7 +687,6 @@
       }catch(ex){ reject(ex); }
     });
   }
-
   async function loadUserDirectory(){
     try{
       const url = await probeUsersUrl();
@@ -691,7 +700,6 @@
       return await scrapeUsersViaIframe();
     }
   }
-
   function nameForUserGroup(g, dir){
     if (dir && dir.byId && dir.byId[g.id]) return dir.byId[g.id];
     if (dir && dir.byExt && /^\d{2,6}$/.test(g.id) && dir.byExt[g.id]) return dir.byExt[g.id];
@@ -699,7 +707,7 @@
     return g.id ? ('User '+g.id) : 'User';
   }
 
-  /* ===================== GROUPING (first-hop) ===================== */
+  /* ---------- grouping ---------- */
   function groupByDestination(rows){
     var map = Object.create(null), out = [];
     for (var i=0;i<rows.length;i++){
@@ -711,14 +719,14 @@
       var key = type + '|' + keyPart;
 
       if (!map[key]) map[key] = { key, type, id, name, numbers: [] };
-      map[key].numbers.push({ id:r.id, number:r.number, label:r.label||'' });
+      map[key].numbers.push({ id:r.id, number:r.number, label:(r.label || r.destName || '') });
     }
     for (var k in map){ if (Object.prototype.hasOwnProperty.call(map,k)) { map[k].count = map[k].numbers.length; out.push(map[k]); } }
     out.sort(function(a,b){ return b.count - a.count || (a.type > b.type ? 1 : -1) || (_normKey(a.name) > _normKey(b.name) ? 1 : -1); });
     return out;
   }
 
-  // Virtual list with optional right label
+  /* ---------- virtual list ---------- */
   function mountVirtualList(container, items, rowH, rightLabel){
     container.innerHTML=''; container.className='rows';
     var pad=make('div','vpad'); pad.style.height=(items.length*rowH)+'px';
@@ -731,7 +739,7 @@
       rows.style.transform='translateY('+(start*rowH)+'px)'; rows.innerHTML='';
       for(var i=start;i<end;i++){
         var it=items[i], row=make('div','row');
-        var left=make('div',null,'<div class="row-num">'+it.number+'</div>'+(it.label?'<div class="muted">'+it.label+'</div>':''));
+        var left=make('div',null,'<div class="row-num">'+it.number+'</div>'+(it.label?'<div class="muted">'+it.label+'</div>':'')); // label under TN
         var right=make('div','muted', rightLabel || '');
         row.appendChild(left); row.appendChild(right); rows.appendChild(row);
       }
@@ -739,36 +747,51 @@
     container.addEventListener('scroll', draw); draw(); return { redraw: draw };
   }
 
-  /* ===================== MOUNT APP (compact, Expand/Collapse) ===================== */
-  window.cvIntelliRoutingMount = function(root){
+  /* ---------- mount UI (left column with expand) ---------- */
+  function cvIntelliRoutingMount(root){
     try{
       root.innerHTML='';
       var wrap=make('div','ir');
       wrap.innerHTML =
-         '<div class="ir-left">'
-        +   '<div class="ir-h1">Destinations</div>'
-        +   '<input id="ir-q" class="ir-search" placeholder="Search destination or number…"/>'
-        +   '<div class="ir-filters">'
-        +     '<span data-ft="all" class="chip active">All</span>'
-        +     '<span data-ft="User" class="chip">User</span>'
-        +     '<span data-ft="Queue" class="chip">Queue</span>'
-        +     '<span data-ft="AA" class="chip">Auto Attendant</span>'
-        +     '<span data-ft="External" class="chip">External</span>'
-        +     '<span data-ft="VM" class="chip">Voicemail</span>'
-        +   '</div>'
-        +   '<div class="list-outer"><div id="ir-groups"></div></div>'
-        +   '<div id="ir-count" class="muted" style="margin-top:6px"></div>'
-        + '</div>';
+        '<div class="ir-left">'
+      +   '<div class="ir-h1">Destinations</div>'
+      +   '<input id="ir-q" class="ir-search" placeholder="Search destination or number…"/>'
+      +   '<div class="ir-filters">'
+      +     '<span data-ft="all" class="chip active">All</span>'
+      +     '<span data-ft="User" class="chip">User</span>'
+      +     '<span data-ft="Queue" class="chip">Queue</span>'
+      +     '<span data-ft="AA" class="chip">Auto Attendant</span>'
+      +     '<span data-ft="External" class="chip">External</span>'
+      +     '<span data-ft="VM" class="chip">Voicemail</span>'
+      +   '</div>'
+      +   '<div class="list-outer"><div id="ir-groups"></div></div>'
+      +   '<div id="ir-count" class="muted" style="margin-top:6px"></div>'
+      + '</div>';
       root.appendChild(wrap);
+
+      /* (optional) preview drawer scaffold kept for future */
+      var drawer=document.getElementById('ir-drawer');
+      if(!drawer){
+        drawer=document.createElement('div');
+        drawer.id='ir-drawer'; drawer.className='drawer';
+        drawer.innerHTML='<div class="drawer-h"><div id="ir-drawer-title">Preview</div><button class="drawer-x" title="Close">×</button></div><div class="drawer-b" id="ir-drawer-body"></div>';
+        root.appendChild(drawer);
+        drawer.querySelector('.drawer-x').addEventListener('click', function(){ drawer.classList.remove('open'); });
+      }
 
       var groups=[], viewGroups=[], openKey=null;
 
+      function titleFor(g){
+        return (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
+      }
+
       function renderCard(g){
-        var title = (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
+        var title  = titleFor(g);
         var isOpen = (openKey === g.key);
 
         var card = make('div','card'); card.appendChild(make('div','left-bar'));
         var hdr  = make('div','card-h');
+
         var left = make('div','hdr-left');
         left.appendChild(make('div','card-title', title));
         left.appendChild(make('span','dest-badge', g.type));
@@ -785,14 +808,14 @@
         if (isOpen){
           card.classList.add('open');
 
-          // Export just this destination’s numbers
+          /* Export CSV for just this destination (Number,Destination) */
           var acts = make('div','card-actions');
           var exportBtn = make('button','btn','Export CSV');
           exportBtn.onclick = function(){
-            var csv = 'Number,Label\n', i, n, lbl;
-            for(i=0;i<g.numbers.length;i++){
-              n=g.numbers[i]; lbl=(n.label||'').replace(/"/g,'""');
-              csv += '"' + n.number + '","' + lbl + '"\n';
+            var dest = (title || '').replace(/"/g,'""');
+            var csv  = 'Number,Destination\n';
+            for (var i=0;i<g.numbers.length;i++){
+              csv += '"' + g.numbers[i].number + '","' + dest + '"\n';
             }
             var blob = new Blob([csv], {type:'text/csv'});
             var url  = URL.createObjectURL(blob);
@@ -805,7 +828,7 @@
           acts.appendChild(exportBtn);
           body.appendChild(acts);
 
-          // mini, scrollable list
+          /* mini list */
           var rowsHost = make('div','rows');
           body.appendChild(rowsHost);
           var rightLabel = /^\d{2,6}$/.test(g.id) ? ('#'+g.id) : '';
@@ -813,20 +836,14 @@
         }
         card.appendChild(body);
 
-        btn.onclick = function(){
-          openKey = isOpen ? null : g.key;
-          renderGroups(); // toggle
-        };
-
+        btn.onclick = function(){ openKey = isOpen ? null : g.key; renderGroups(); };
         return card;
       }
 
       function renderGroups(){
-        var host = document.getElementById('ir-groups');
-        host.innerHTML = '';
-        for (var i=0;i<viewGroups.length;i++) host.appendChild(renderCard(viewGroups[i]));
-        document.getElementById('ir-count').textContent =
-          viewGroups.length + ' destination group' + (viewGroups.length===1?'':'s');
+        var host=document.getElementById('ir-groups'); host.innerHTML='';
+        for(var i=0;i<viewGroups.length;i++) host.appendChild(renderCard(viewGroups[i]));
+        document.getElementById('ir-count').textContent = viewGroups.length + ' destination group' + (viewGroups.length===1?'':'s');
       }
 
       function applyFilters(){
@@ -836,45 +853,45 @@
         viewGroups=[];
         for(i=0;i<groups.length;i++){
           var g=groups[i]; if(type!=='all' && g.type!==type) continue;
-          var title = (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
-          var match=!term || (title && _normKey(title).indexOf(term)>=0);
+          var t = titleFor(g);
+          var match=!term || (t && _normKey(t).indexOf(term)>=0);
           if(!match && /[0-9]/.test(term)){
             for(var j=0;j<g.numbers.length;j++){ if(_normKey(g.numbers[j].number).indexOf(term)>=0){ match=true; break; } }
             if(!match && g.id && _normKey(String(g.id)).indexOf(term)>=0) match=true;
           }
           if(match) viewGroups.push(g);
         }
-        // if the opened card is filtered out, close it
-        if (openKey && !viewGroups.some(function(x){return x.key===openKey;})) openKey = null;
         renderGroups();
       }
 
-      // wire UI
+      /* events */
       document.getElementById('ir-q').addEventListener('input', applyFilters);
       var chips = wrap.querySelectorAll('.chip');
-      chips.forEach(function(ch){
-        ch.addEventListener('click', function(){
-          chips.forEach(function(c){ c.classList.remove('active'); });
-          this.classList.add('active');
-          applyFilters();
-        });
-      });
+      chips.forEach(function(ch){ ch.addEventListener('click', function(){
+        chips.forEach(function(c){ c.classList.remove('active'); });
+        this.classList.add('active'); applyFilters();
+      });});
 
-      // boot
+      /* boot */
       loadInventory().then(async function(rows){
         groups = groupByDestination(rows||[]);
         try { window.__cvUserDir = await loadUserDirectory(); } catch(e){ log('user names not resolved:', e && e.message ? e.message : e); }
         applyFilters();
       }).catch(function(err){
-        console.error('[Intelli] inventory error:', err);
-        var host = document.getElementById('ir-groups');
-        host.innerHTML = '<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
+        var msg='<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
           + '<div style="font-weight:600; margin-bottom:6px;">Could not load phone number inventory</div>'
-          + '<div style="font-size:12px;">' + (err && err.message ? err.message : err) + '</div></div>';
+          + '<div style="margin-bottom:6px;">' + (err && err.message ? err.message : err) + '</div>'
+          + '<div style="font-size:12px;">Set endpoints if known:<br>'
+          + '<code>window.cvIntelliNumbersUrl = "/exact/numbers/path";</code><br>'
+          + '<code>window.cvIntelliUsersUrl   = "/exact/users/path";</code><br>then click the tile again.</div>'
+          + '</div>';
+        root.innerHTML = msg;
       });
     }catch(e){
       try{ root.innerHTML='<div style="color:#a00">Mount error: '+(e && e.message ? e.message : e)+'</div>'; }catch(_){}
       console.error(e);
     }
-  };
+  }
+  window.cvIntelliRoutingMount = cvIntelliRoutingMount;
 })();
+
