@@ -357,6 +357,27 @@
   window.cvIntelliPreferMode = window.cvIntelliPreferMode || 'export'; // 'export' | 'api' | 'scrape'
   var __cvInvPromise = null;
 
+  /* ---------- classification helpers + type mapping ---------- */
+function isAAString(s){
+  s = _normKey(s);
+  if (!s) return false;
+  // “Auto Attendant”, “Auto-Attendant”, “AutoAttendant”, “IVR”, “Main Menu”, etc.
+  return /\b(aa|ivr|auto[\s\-_]*attendant|attendant\s*menu|call\s*menu|main\s*menu|digital\s*receptionist|receptionist)\b/.test(s);
+}
+
+function mapDestType(t, name){
+  var tt = _normKey(t);
+  var nn = _normKey(name);
+
+  if (/\b(queue|call ?queue|acd)\b/.test(tt)) return 'Queue';
+  if (/\b(user|person|extension)\b/.test(tt)) return 'User';
+  if (isAAString(tt) || isAAString(nn))      return 'AA';
+  if (/\b(vm|voice ?mail|voicemail)\b/.test(tt)) return 'VM';
+  if (/\b(available number|unassigned)\b/.test(tt)) return 'External';
+  if (/\b(external|pstn|sip|route|number)\b/.test(tt) || /number$/.test(tt)) return 'External';
+  return 'External';
+}
+
   /* ---------- helpers ---------- */
   function log(){ try{ console.log.apply(console, ['[Intelli]'].concat([].slice.call(arguments))); }catch(_){} }
   function make(tag, cls, html){ var el=document.createElement(tag); if(cls) el.className=cls; if(html!=null) el.innerHTML=html; return el; }
@@ -422,24 +443,25 @@
   }
 
   function mapExportRecord(rec) {
-    function pick(o, ks) { for (var k of ks) if (o[k] != null && String(o[k]).trim() !== '') return String(o[k]).trim(); return ''; }
-    var phone = pick(rec, ['Phone Number','Phone','Number','TN','DID','DNIS']);
-    var treat = pick(rec, ['Treatment','Routing','Type','Destination Type','Owner Type']);
-    var dname = pick(rec, ['Destination','Destination Name','Owner','Owner Name','Notes','Description']);
-    var did   = pick(rec, ['Dest ID','Destination ID','Owner ID','Extension','Ext','Login','Username','User ID']);
-    if (!did && dname) did = extFromDestination(dname);
-    var digits = (phone || '').replace(/[^\d]/g,'');
-    var label  = pick(rec, ['Label','Alias','Tag']) || dname;       // ← default to Destination
+  function pick(o, ks) { for (var k of ks) if (o[k] != null && String(o[k]).trim() !== '') return String(o[k]).trim(); return ''; }
+  var phone = pick(rec, ['Phone Number','Phone','Number','TN','DID','DNIS']);
+  var treat = pick(rec, ['Treatment','Routing','Type','Destination Type','Owner Type']);
+  var dname = pick(rec, ['Destination','Destination Name','Owner','Owner Name','Notes','Description']);
+  var did   = pick(rec, ['Dest ID','Destination ID','Owner ID','Extension','Ext','Login','Username','User ID']);
+  if (!did && dname) did = extFromDestination(dname);
+  var digits = (phone || '').replace(/[^\d]/g,'');
+  var label  = pick(rec, ['Label','Alias','Tag']) || dname;
 
-    return {
-      id:       (rec.id || rec.uuid || ('n' + (digits || '').slice(-8))),
-      number:   formatTN(phone),
-      label:    label,
-      const type    = mapDestType(typeRaw, nameRaw);  // ← pass name too
-      destId:   String(did || ''),
-      destName: _norm(dname)
-    };
-  }
+  return {
+    id:       (rec.id || rec.uuid || ('n' + (digits || '').slice(-8))),
+    number:   formatTN(phone),
+    label:    label,
+    destType: mapDestType(treat, dname),   // ← classify using treatment + destination text
+    destId:   String(did || ''),
+    destName: _norm(dname)
+  };
+}
+
 
   async function probeExportUrl() {
     if (window.cvIntelliExportUrl) return window.cvIntelliExportUrl;
@@ -739,7 +761,8 @@
   }
 
   /* ---------- virtual list ---------- */
-  function mountVirtualList(container, items, rowH, right) {
+  /* ---------- virtual list ---------- */
+function mountVirtualList(container, items, rowH, right) {
   container.innerHTML = '';
   container.className  = 'rows';
 
@@ -772,10 +795,9 @@
       var row = make('div','row');
 
       // LEFT: number only
-      var left = make('div','row-left','<div class="row-num">'+ it.number +'</div>');
-      row.appendChild(left);
+      row.appendChild(make('div','row-left','<div class="row-num">'+ it.number +'</div>'));
 
-      // RIGHT: per-row text (description/label)
+      // RIGHT: description/label
       var rt = rightTextOf(it, i);
       if (rt) row.appendChild(make('div','muted row-right', rt));
 
@@ -787,6 +809,7 @@
   draw();
   return { redraw: draw };
 }
+
 
 
   /* ---------- mount UI (left column with expand) ---------- */
