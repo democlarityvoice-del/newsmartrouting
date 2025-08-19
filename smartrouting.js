@@ -728,24 +728,51 @@
 
   /* ---------- virtual list ---------- */
   function mountVirtualList(container, items, rowH, rightLabel){
-    container.innerHTML=''; container.className='rows';
-    var pad=make('div','vpad'); pad.style.height=(items.length*rowH)+'px';
-    var rows=make('div'); rows.style.position='absolute'; rows.style.left=0; rows.style.right=0; rows.style.top=0;
-    container.appendChild(pad); container.appendChild(rows);
-    function draw(){
-      var top=container.scrollTop, h=container.clientHeight;
-      var start=Math.max(0, Math.floor(top/rowH)-4);
-      var end=Math.min(items.length, start+Math.ceil(h/rowH)+8);
-      rows.style.transform='translateY('+(start*rowH)+'px)'; rows.innerHTML='';
-      for(var i=start;i<end;i++){
-        var it=items[i], row=make('div','row');
-        var left=make('div',null,'<div class="row-num">'+it.number+'</div>'+(it.label?'<div class="muted">'+it.label+'</div>':'')); // label under TN
-        var right=make('div','muted', rightLabel || '');
-        row.appendChild(left); row.appendChild(right); rows.appendChild(row);
-      }
+  container.innerHTML='';
+  container.className='rows';
+
+  var pad = make('div','vpad');
+  pad.style.height = (items.length * rowH) + 'px';
+
+  var rows = make('div');
+  rows.style.position = 'absolute';
+  rows.style.left = 0; rows.style.right = 0; rows.style.top = 0;
+
+  container.appendChild(pad);
+  container.appendChild(rows);
+
+  function draw(){
+    var top = container.scrollTop, h = container.clientHeight;
+    var start = Math.max(0, Math.floor(top / rowH) - 4);
+    var end = Math.min(items.length, start + Math.ceil(h / rowH) + 8);
+
+    rows.style.transform = 'translateY(' + (start * rowH) + 'px)';
+    rows.innerHTML = '';
+
+    for (var i = start; i < end; i++){
+      var it = items[i];
+      var row = make('div','row');
+
+      var left = make(
+        'div',
+        null,
+        '<div class="row-num">' + it.number + '</div>' +
+        (it.label ? '<div class="muted">' + it.label + '</div>' : '')
+      );
+      row.appendChild(left);
+
+      // Only add right cell if a non-empty label is passed
+      if (rightLabel) row.appendChild(make('div','muted', rightLabel));
+
+      rows.appendChild(row);
     }
-    container.addEventListener('scroll', draw); draw(); return { redraw: draw };
   }
+
+  container.addEventListener('scroll', draw);
+  draw();
+  return { redraw: draw };
+}
+
 
   /* ---------- mount UI (left column with expand) ---------- */
   function cvIntelliRoutingMount(root){
@@ -831,9 +858,9 @@
           /* mini list */
           var rowsHost = make('div','rows');
           body.appendChild(rowsHost);
-          var rightLabel = /^\d{2,6}$/.test(g.id) ? ('#'+g.id) : '';
-          mountVirtualList(rowsHost, g.numbers, 32, rightLabel);
-        }
+        // no #ext on the right — destination is already shown in the title
+          mountVirtualList(rowsHost, g.numbers, 32, null);
+
         card.appendChild(body);
 
         btn.onclick = function(){ openKey = isOpen ? null : g.key; renderGroups(); };
