@@ -335,8 +335,8 @@
 })();
 
 /* ===================== Intelli Routing — COMPLETE DROP-IN (compact + drawer) ===================== */
-/* ===================== Intelli Routing — COMPLETE DROP-IN (compact + drawer) ===================== */
-/* ===================== Intelli Routing — COMPLETE DROP-IN (compact + drawer) ===================== */
+<!-- ===================== Intelli Routing — COMPLETE DROP-IN (compact + drawer) ===================== -->
+
 ;(function(){
   "use strict";
 
@@ -384,81 +384,58 @@
     if (isAAString(tt) || isAAString(nn)) return 'AA';
     return 'External';
   }
-  function typeTitle(t){
-    return (t==='AA') ? 'Auto Attendant'
-         : (t==='VM') ? 'Voicemail'
-         : (t==='Queue') ? 'Queue'
-         : (t==='User') ? 'User'
-         : 'External';
+  function prettyType(t){ return t==='AA'?'Auto Attendant' : t==='VM'?'Voicemail' : t||''; }
+
+  /* Display label helper: "Treatment Name + Destination Name" (except Available Number) */
+  function buildDisplayLabel(row){
+    if (/available number/i.test(row.destName) || /available number/i.test(row.label)) return 'Available Number';
+    var t = prettyType(row.destType);
+    var n = (row.destName || row.label || '').trim();
+    return (t && n) ? (t + ' ' + n) : (n || t);
   }
 
-  /* === Auto Attendants index (portal/attendants) — no timeout, cached === */
-function extFromDestination(s){
-  var m = String(s || '').match(/\b(\d{3,6})\b/);
-  return m ? m[1] : '';
-}
-var __AA_CACHE = null;
-async function loadAAIndex(){
-  if (__AA_CACHE && (Date.now() - __AA_CACHE.t < 5*60*1000)) return __AA_CACHE.set;
+  /* ---------- Auto Attendants index (portal/attendants) — cached, no timeouts ---------- */
+  var __AA_CACHE = null;
+  async function loadAAIndex(){
+    if (__AA_CACHE && (Date.now() - __AA_CACHE.t < 5*60*1000)) return __AA_CACHE.set;
 
-  return new Promise(function(resolve){
-    try{
-      var frame = document.getElementById('cv-intelli-aa');
-      if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+    return new Promise(function(resolve){
+      try{
+        var frame = document.getElementById('cv-intelli-aa');
+        if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
 
-      frame = document.createElement('iframe');
-      frame.id = 'cv-intelli-aa';
-      frame.src = '/portal/attendants';
-      Object.assign(frame.style, { position:'fixed', left:'-9999px', top:'-9999px', width:'1px', height:'1px', opacity:'0' });
-      frame.setAttribute('aria-hidden','true');
-      document.body.appendChild(frame);
+        frame = document.createElement('iframe');
+        frame.id = 'cv-intelli-aa';
+        frame.src = '/portal/attendants';
+        Object.assign(frame.style, { position:'fixed', left:'-9999px', top:'-9999px', width:'1px', height:'1px', opacity:'0' });
+        frame.setAttribute('aria-hidden','true');
+        document.body.appendChild(frame);
 
-      frame.onload = function(){
-        try{
-          var doc  = frame.contentWindow.document;
-          // Very forgiving: grab any table-ish rows; ext is the 2nd cell or any 3–6 digit token
-          var rows = [].slice.call(doc.querySelectorAll('table tr, .list tbody tr, .table tr'));
-          var set  = new Set();
-          rows.forEach(function(tr){
-            var tds = tr.querySelectorAll ? tr.querySelectorAll('td,th') : [];
-            if (tds.length < 2) return;
-            var raw = (tds[1].textContent || '').trim();
-            var m   = raw.match(/\b(\d{3,6})\b/);
-            if (m) set.add(m[1]);
-          });
-          __AA_CACHE = { t: Date.now(), set: set };
-          if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
-          resolve(set);
-        }catch(_){
-          if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
-          // Never fail the main flow just because AA list couldn’t be read
-          resolve(new Set());
-        }
-      };
-    }catch(_){
-      resolve(new Set());
-    }
-  });
-}
-
-/* Display label helper: "Treatment Name + Destination Name" (except Available Number) */
-function prettyType(t){
-  if (t === 'AA') return 'Auto Attendant';
-  if (t === 'VM') return 'Voicemail';
-  return t || '';
-}
-function buildDisplayLabel(row){
-  // Available Number stays as-is if already marked that way
-  if (/available number/i.test(row.destName) || /available number/i.test(row.label)) {
-    return 'Available Number';
+        frame.onload = function(){
+          try{
+            var doc  = frame.contentWindow.document;
+            var rows = [].slice.call(doc.querySelectorAll('table tr, .list tbody tr, .table tr'));
+            var set  = new Set();
+            rows.forEach(function(tr){
+              var tds = tr.querySelectorAll ? tr.querySelectorAll('td,th') : [];
+              if (tds.length < 2) return;
+              var raw = (tds[1].textContent || '').trim();
+              var m   = raw.match(/\b(\d{3,6})\b/);
+              if (m) set.add(m[1]);
+            });
+            __AA_CACHE = { t: Date.now(), set: set };
+            if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+            resolve(set);
+          }catch(_){
+            if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+            resolve(new Set()); // fail-safe
+          }
+        };
+      }catch(_){ resolve(new Set()); }
+    });
   }
-  var t = prettyType(row.destType);
-  var n = (row.destName || row.label || '').trim();
-  return (t && n) ? (t + ' ' + n) : (n || t);
-}
 
- 
-  /* ---------- CSV → rows ---------- */
+  /* ---------- CSV helpers ---------- */
   function parseCSV(text) {
     text = String(text || '');
     if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
@@ -529,58 +506,6 @@ function buildDisplayLabel(row){
     return rows;
   }
 
- async function loadInventory(){
-  // use 5-minute cache if present
-  if (window.__cvIntelliNumCache && (Date.now() - window.__cvIntelliNumCache.t < 5*60*1000)) {
-    return window.__cvIntelliNumCache.rows.slice();
-  }
-  if (__cvInvPromise) return __cvInvPromise;
-
-  __cvInvPromise = (async () => {
-    // Prefer CSV export unless explicitly set to API
-    if ((window.cvIntelliPreferMode || 'export') !== 'api') {
-      try {
-        const rows = await loadInventoryViaExport();
-        if (rows && rows.length) return rows;
-      } catch (e) { log('Export CSV failed — falling back:', e && e.message ? e.message : e); }
-    }
-
-    // Try JSON API
-    try {
-      const base = await probeNumbersUrl();
-      const raw  = await fetchJSON(addParam(base, 'limit', '5000'));
-      const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
-      if (!Array.isArray(list) || !list.length) throw new Error('Endpoint returned no items: '+base);
-
-      const rows = list.map(function(x,i){
-        const typeRaw = x.treatment || x.dest_type || x.owner_type || x.type || x.destination_type;
-        const nameRaw = x.dest_name || x.owner_name || x.destination_name || x.destination || x.notes || '';
-        const type    = mapDestTypeFromTreatment(typeRaw, nameRaw);
-        const idRaw   = x.owner_ext || x.ext || x.dest_id || x.owner_id || x.destination_id
-                        || ((type==='User'||type==='AA'||type==='Queue') ? extFromDestination(nameRaw) : '');
-        return {
-          id:        x.id || x.uuid || ('num'+i),
-          number:    formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
-          label:     _norm(nameRaw),
-          treatment: typeRaw || '',
-          destType:  type,
-          destId:    String(idRaw || ''),
-          destName:  _norm(nameRaw)
-        };
-      });
-      window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() };
-      return rows;
-    } catch(apiErr){
-      log('API numbers failed — falling back to iframe scrape:', apiErr && apiErr.message ? apiErr.message : apiErr);
-    }
-
-    // Final fallback: scrape Inventory UI
-    return await scrapeInventoryViaIframe();
-  })().finally(function(){ __cvInvPromise = null; });
-
-  return __cvInvPromise;
-}
- 
   /* ---------- numbers via API or iframe (fallback) ---------- */
   var NUMBERS_URL = window.cvIntelliNumbersUrl || null;
   async function probeNumbersUrl(){
@@ -704,8 +629,57 @@ function buildDisplayLabel(row){
     });
   }
 
+  async function loadInventory(){
+    // use 5-minute cache if present
+    if (window.__cvIntelliNumCache && (Date.now() - window.__cvIntelliNumCache.t < 5*60*1000)) {
+      return window.__cvIntelliNumCache.rows.slice();
+    }
+    if (__cvInvPromise) return __cvInvPromise;
 
+    __cvInvPromise = (async () => {
+      // Prefer CSV export unless explicitly set to API
+      if ((window.cvIntelliPreferMode || 'export') !== 'api') {
+        try {
+          const rows = await loadInventoryViaExport();
+          if (rows && rows.length) return rows;
+        } catch (e) { log('Export CSV failed — falling back:', e && e.message ? e.message : e); }
+      }
 
+      // Try JSON API
+      try {
+        const base = await probeNumbersUrl();
+        const raw  = await fetchJSON(addParam(base, 'limit', '5000'));
+        const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
+        if (!Array.isArray(list) || !list.length) throw new Error('Endpoint returned no items: '+base);
+
+        const rows = list.map(function(x,i){
+          const typeRaw = x.treatment || x.dest_type || x.owner_type || x.type || x.destination_type;
+          const nameRaw = x.dest_name || x.owner_name || x.destination_name || x.destination || x.notes || '';
+          const type    = mapDestTypeFromTreatment(typeRaw, nameRaw);
+          const idRaw   = x.owner_ext || x.ext || x.dest_id || x.owner_id || x.destination_id
+                          || ((type==='User'||type==='AA'||type==='Queue') ? extFromDestination(nameRaw) : '');
+          return {
+            id:        x.id || x.uuid || ('num'+i),
+            number:    formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
+            label:     _norm(nameRaw),
+            treatment: typeRaw || '',
+            destType:  type,
+            destId:    String(idRaw || ''),
+            destName:  _norm(nameRaw)
+          };
+        });
+        window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() };
+        return rows;
+      } catch(apiErr){
+        log('API numbers failed — falling back to iframe scrape:', apiErr && apiErr.message ? apiErr.message : apiErr);
+      }
+
+      // Final fallback: scrape Inventory UI
+      return await scrapeInventoryViaIframe();
+    })().finally(function(){ __cvInvPromise = null; });
+
+    return __cvInvPromise;
+  }
 
   /* ---------- virtual list ---------- */
   function mountVirtualList(container, items, rowH, right) {
@@ -756,6 +730,109 @@ function buildDisplayLabel(row){
     return { redraw: draw };
   }
 
+  /* ---------- grouping ---------- */
+  function groupByDestination(rows){
+    var map = Object.create(null), out = [];
+    rows.forEach(function(r){
+      var type = r.destType || 'External';
+      var id   = _norm(r.destId);
+      var name = _norm(r.destName);
+      var key  = type + '|' + (id ? ('id:'+id) : ('name:'+_normKey(name)));
+      if (!map[key]) map[key] = { key, type, id, name, numbers: [] };
+      map[key].numbers.push({ id:r.id, number:r.number, label:(r.label || r.destName || '') });
+    });
+    for (var k in map){
+      if (Object.prototype.hasOwnProperty.call(map,k)) {
+        map[k].count = map[k].numbers.length;
+        out.push(map[k]);
+      }
+    }
+    out.sort(function(a,b){
+      return b.count - a.count
+          || (a.type > b.type ? 1 : -1)
+          || (_normKey(a.name) > _normKey(b.name) ? 1 : -1);
+    });
+    return out;
+  }
+
+  /* ---------- users (for nicer User titles) ---------- */
+  var USERS_URL = window.cvIntelliUsersUrl || null;
+  async function probeUsersUrl(){
+    if (USERS_URL) return USERS_URL;
+    const candidates = ['/portal/api/users','/portal/api/v1/users','/portal/ajax/users','/portal/ajax/user/list','/api/users','/ns-api/users'];
+    for (let i=0;i<candidates.length;i++){
+      try {
+        const data = await fetchJSON(addParam(candidates[i], 'limit', '1'));
+        const list = Array.isArray(data) ? data : (data.items || data.results || data.data || data.users);
+        if (Array.isArray(list)) { log('users endpoint:', candidates[i]); USERS_URL = candidates[i]; return USERS_URL; }
+      } catch(_) {}
+    }
+    throw new Error('No users JSON endpoint; will try UI scrape.');
+  }
+  function mkUserDisplay(u){
+    const ext   = _norm(u.ext || u.extension || u.exten || u.login || u.username);
+    const first = _norm(u.first_name || u.first);
+    const last  = _norm(u.last_name  || u.last);
+    const base  = _norm(u.display_name || u.full_name || u.name || ((first||last)?(first+' '+last).trim():'')); 
+    const id    = _norm(u.id || u.user_id || u.uuid || u.uid || ext);
+    const label = base || ('User ' + (ext || id));
+    return { id, ext, label: ext ? (label + ' ('+ext+')') : label };
+  }
+  async function scrapeUsersViaIframe(){
+    return new Promise(function(resolve, reject){
+      try{
+        var frame=document.getElementById('cv-intelli-usersframe');
+        if(frame && frame.parentNode) frame.parentNode.removeChild(frame);
+        frame=document.createElement('iframe');
+        frame.id='cv-intelli-usersframe';
+        frame.src='/portal/users';
+        frame.setAttribute('aria-hidden','true');
+        Object.assign(frame.style, { position:'fixed', left:'-9999px', top:'-9999px', width:'1px', height:'1px', opacity:'0' });
+        document.body.appendChild(frame);
+
+        var killed=false, timeout=setTimeout(function(){ cleanup(); reject(new Error('Users iframe timed out')); }, 30000);
+        function cleanup(){ if(killed) return; killed=true; clearTimeout(timeout); if(frame && frame.parentNode) frame.parentNode.removeChild(frame); }
+
+        frame.onload=function(){
+          try{
+            var doc=frame.contentWindow.document;
+            var rows=[].slice.call(doc.querySelectorAll('table tr, .list tbody tr, .table tr'));
+            var byId=Object.create(null), byExt=Object.create(null);
+            rows.forEach(function(tr){
+              var tds=tr.querySelectorAll ? tr.querySelectorAll('td,th') : []; if(!tds || tds.length<2) return;
+              var text=[].map.call(tds, td=> (td.textContent||'').trim());
+              var name=(text[0]||'').trim(); var ext='';
+              for(var i=1;i<text.length;i++){ var m=text[i].match(/\b(\d{2,6})\b/); if(m){ ext=m[1]; break; } }
+              if(!name || !ext) return;
+              var id=ext; var label=name+' ('+ext+')';
+              byId[id]=label; byExt[ext]=label;
+            });
+            cleanup(); resolve({ byId, byExt });
+          }catch(e){ cleanup(); reject(e); }
+        };
+      }catch(ex){ reject(ex); }
+    });
+  }
+  async function loadUserDirectory(){
+    try{
+      const url = await probeUsersUrl();
+      const raw = await fetchJSON(addParam(url, 'limit', '5000'));
+      const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.users || []);
+      const byId=Object.create(null), byExt=Object.create(null);
+      list.forEach(u => { const d=mkUserDisplay(u); if(d.id) byId[d.id]=d.label; if(d.ext) byExt[d.ext]=d.label; });
+      return { byId, byExt };
+    }catch(e){
+      log('users JSON failed — scraping UI:', e && e.message ? e.message : e);
+      return await scrapeUsersViaIframe();
+    }
+  }
+  function nameForUserGroup(g, dir){
+    if (dir && dir.byId && dir.byId[g.id]) return dir.byId[g.id];
+    if (dir && dir.byExt && /^\d{2,6}$/.test(g.id) && dir.byExt[g.id]) return dir.byExt[g.id];
+    if (_norm(g.name) && _norm(g.name).toLowerCase()!=='user') return g.name;
+    return g.id ? ('User '+g.id) : 'User';
+  }
+
   /* ---------- mount UI (left column with expand) ---------- */
   function cvIntelliRoutingMount(root){
     try{
@@ -778,25 +855,10 @@ function buildDisplayLabel(row){
       + '</div>';
       root.appendChild(wrap);
 
-      var drawer=document.getElementById('ir-drawer');
-      if(!drawer){
-        drawer=document.createElement('div');
-        drawer.id='ir-drawer'; drawer.className='drawer';
-        drawer.innerHTML='<div class="drawer-h"><div id="ir-drawer-title">Preview</div><button class="drawer-x" title="Close">×</button></div><div class="drawer-b" id="ir-drawer-body"></div>';
-        root.appendChild(drawer);
-        drawer.querySelector('.drawer-x').addEventListener('click', function(){ drawer.classList.remove('open'); });
-      }
-
       var groups=[], viewGroups=[], openKey=null;
 
       function titleFor(g){
         return (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
-      }
-      function nameForUserGroup(g, dir){
-        if (dir && dir.byId && dir.byId[g.id]) return dir.byId[g.id];
-        if (dir && dir.byExt && /^\d{2,6}$/.test(g.id) && dir.byExt[g.id]) return dir.byExt[g.id];
-        if (_norm(g.name) && _norm(g.name).toLowerCase()!=='user') return g.name;
-        return g.id ? ('User '+g.id) : 'User';
       }
 
       function renderCard(g){
@@ -883,127 +945,37 @@ function buildDisplayLabel(row){
         this.classList.add('active'); applyFilters();
       });});
 
-      // Load inventory + attendants, then apply AA override and display labels
-     // Load inventory, merge AA index, then render
-loadInventory().then(async function(rows){
-  var aaSet = await loadAAIndex();
+      // Load inventory, merge AA index, then render
+      loadInventory().then(async function(rows){
+        var aaSet = await loadAAIndex();
 
-  rows.forEach(function(r){
-    if (r && r.destType === 'User') {
-      var ext = r.destId || extFromDestination(r.destName || r.label);
-      if (ext && aaSet.has(ext)) r.destType = 'AA';
-    }
-    // Build final display label: "Treatment Name + Destination Name"
-    r.label = buildDisplayLabel(r);
-  });
+        rows.forEach(function(r){
+          if (r && r.destType === 'User') {
+            var ext = r.destId || extFromDestination(r.destName || r.label);
+            if (ext && aaSet.has(ext)) r.destType = 'AA';
+          }
+          r.label = buildDisplayLabel(r);
+        });
 
-  function groupByDestination(rows){
-  var map = Object.create(null), out = [];
-  rows.forEach(function(r){
-    var type = r.destType || 'External';
-    var id   = _norm(r.destId);
-    var name = _norm(r.destName);
-    var key  = type + '|' + (id ? ('id:'+id) : ('name:'+_normKey(name)));
-    if (!map[key]) map[key] = { key, type, id, name, numbers: [] };
-    map[key].numbers.push({ id:r.id, number:r.number, label:(r.label || r.destName || '') });
-  });
-  for (var k in map){
-    if (Object.prototype.hasOwnProperty.call(map,k)) {
-      map[k].count = map[k].numbers.length;
-      out.push(map[k]);
-    }
-  }
-  out.sort(function(a,b){
-    return b.count - a.count
-        || (a.type > b.type ? 1 : -1)
-        || (_normKey(a.name) > _normKey(b.name) ? 1 : -1);
-  });
-  return out;
-}
+        groups = groupByDestination(rows || []);
+        try { window.__cvUserDir = await loadUserDirectory(); } catch(e){ log('user names not resolved:', e && e.message ? e.message : e); }
+        applyFilters();
+      }).catch(function(err){
+        var msg='<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
+          + '<div style="font-weight:600; margin-bottom:6px;">Could not load phone number inventory</div>'
+          + '<div style="margin-bottom:6px;">' + (err && err.message ? err.message : err) + '</div>'
+          + '<div style="font-size:12px;">If your environment requires fixed endpoints:<br>'
+          + '<code>window.cvIntelliNumbersUrl = "/exact/numbers/path";</code><br>'
+          + '<code>window.cvIntelliUsersUrl   = "/exact/users/path";</code><br>then click the tile again.</div>'
+          + '</div>';
+        root.innerHTML = msg;
+      });
 
-  groups = groupByDestination(rows || []);
-  try { window.__cvUserDir = await loadUserDirectory(); } catch(e){ log('user names not resolved:', e && e.message ? e.message : e); }
-  applyFilters();
-}).catch(function(err){
-  var msg='<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
-    + '<div style="font-weight:600; margin-bottom:6px;">Could not load phone number inventory</div>'
-    + '<div style="margin-bottom:6px;">' + (err && err.message ? err.message : err) + '</div>'
-    + '<div style="font-size:12px;">If your environment requires fixed endpoints:<br>'
-    + '<code>window.cvIntelliNumbersUrl = "/exact/numbers/path";</code><br>'
-    + '<code>window.cvIntelliUsersUrl   = "/exact/users/path";</code><br>then click the tile again.</div>'
-    + '</div>';
-  root.innerHTML = msg;
-});
-
-  /* ---------- users (unchanged, but kept local) ---------- */
-  var USERS_URL = window.cvIntelliUsersUrl || null;
-  async function probeUsersUrl(){
-    if (USERS_URL) return USERS_URL;
-    const candidates = ['/portal/api/users','/portal/api/v1/users','/portal/ajax/users','/portal/ajax/user/list','/api/users','/ns-api/users'];
-    for (let i=0;i<candidates.length;i++){
-      try {
-        const data = await fetchJSON(addParam(candidates[i], 'limit', '1'));
-        const list = Array.isArray(data) ? data : (data.items || data.results || data.data || data.users);
-        if (Array.isArray(list)) { log('users endpoint:', candidates[i]); USERS_URL = candidates[i]; return USERS_URL; }
-      } catch(_) {}
-    }
-    throw new Error('No users JSON endpoint; will try UI scrape.');
-  }
-  function mkUserDisplay(u){
-    const ext   = _norm(u.ext || u.extension || u.exten || u.login || u.username);
-    const first = _norm(u.first_name || u.first);
-    const last  = _norm(u.last_name  || u.last);
-    const base  = _norm(u.display_name || u.full_name || u.name || ((first||last)?(first+' '+last).trim():'')); 
-    const id    = _norm(u.id || u.user_id || u.uuid || u.uid || ext);
-    const label = base || ('User ' + (ext || id));
-    return { id, ext, label: ext ? (label + ' ('+ext+')') : label };
-  }
-  async function scrapeUsersViaIframe(){
-    return new Promise(function(resolve, reject){
-      try{
-        var frame=document.getElementById('cv-intelli-usersframe');
-        if(frame && frame.parentNode) frame.parentNode.removeChild(frame);
-        frame=document.createElement('iframe');
-        frame.id='cv-intelli-usersframe';
-        frame.src='/portal/users';
-        frame.setAttribute('aria-hidden','true');
-        Object.assign(frame.style, { position:'fixed', left:'-9999px', top:'-9999px', width:'1px', height:'1px', opacity:'0' });
-        document.body.appendChild(frame);
-
-        var killed=false, timeout=setTimeout(function(){ cleanup(); reject(new Error('Users iframe timed out')); }, 30000);
-        function cleanup(){ if(killed) return; killed=true; clearTimeout(timeout); if(frame && frame.parentNode) frame.parentNode.removeChild(frame); }
-
-        frame.onload=function(){
-          try{
-            var doc=frame.contentWindow.document;
-            var rows=[].slice.call(doc.querySelectorAll('table tr, .list tbody tr, .table tr'));
-            var byId=Object.create(null), byExt=Object.create(null);
-            rows.forEach(function(tr){
-              var tds=tr.querySelectorAll ? tr.querySelectorAll('td,th') : []; if(!tds || tds.length<2) return;
-              var text=[].map.call(tds, td=> (td.textContent||'').trim());
-              var name=(text[0]||'').trim(); var ext='';
-              for(var i=1;i<text.length;i++){ var m=text[i].match(/\b(\d{2,6})\b/); if(m){ ext=m[1]; break; } }
-              if(!name || !ext) return;
-              var id=ext; var label=name+' ('+ext+')';
-              byId[id]=label; byExt[ext]=label;
-            });
-            cleanup(); resolve({ byId, byExt });
-          }catch(e){ cleanup(); reject(e); }
-        };
-      }catch(ex){ reject(ex); }
-    });
-  }
-  async function loadUserDirectory(){
-    try{
-      const url = await probeUsersUrl();
-      const raw = await fetchJSON(addParam(url, 'limit', '5000'));
-      const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.users || []);
-      const byId=Object.create(null), byExt=Object.create(null);
-      list.forEach(u => { const d=mkUserDisplay(u); if(d.id) byId[d.id]=d.label; if(d.ext) byExt[d.ext]=d.label; });
-      return { byId, byExt };
     }catch(e){
-      log('users JSON failed — scraping UI:', e && e.message ? e.message : e);
-      return await scrapeUsersViaIframe();
+      try{ root.innerHTML='<div style="color:#a00">Mount error: '+(e && e.message ? e.message : e)+'</div>'; }catch(_){}
+      console.error(e);
     }
   }
+  window.cvIntelliRoutingMount = cvIntelliRoutingMount;
+
 })();
