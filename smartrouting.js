@@ -1,44 +1,118 @@
-/* ===================== NAV BUTTON (robust, jQuery-free, self-healing, lazy loader) ===================== */
-;(function(){
-  "use strict";
+/* ===================== Intelli Routing (compact/drop-in) ===================== */
 
-  function insertNavButton(){
-    var container = document.querySelector('#nav-buttons');
-    if (!container || document.getElementById('nav-intelli-routing')) return;
+// ===== Intelli Routing bootstrap (no scrolling) ===== iframe- fixed
+;(function () {
+  try {
+    // wait until the nav exists
+    function when(pred, fn) {
+      if (pred()) return fn();
+      var obs = new MutationObserver(function () {
+        if (pred()) { obs.disconnect(); fn(); }
+      });
+      obs.observe(document.documentElement, { childList: true, subtree: true });
+      var iv = setInterval(function () {
+        if (pred()) { clearInterval(iv); fn(); }
+      }, 300);
+    }
 
-    var template = document.getElementById('nav-music') || container.querySelector('li');
-    if (!template) return;
+    function start() {
+      if (document.getElementById('nav-intelli-routing')) return; // no duplicates
 
-    var el = template.cloneNode(true);
-    el.id = 'nav-intelli-routing';
+      var $container = $('#nav-buttons');
+      if (!$container.length) return;
 
-    var a = el.querySelector('a');
-    if (!a) { a = document.createElement('a'); el.appendChild(a); }
-    a.id = 'nav-intelli-routing-link';
-    a.href = '#';
-    a.title = 'Intelli Routing';
-    a.addEventListener('click', function(e){
-      e.preventDefault();
-      if (!window.__cvIntelliLoaded) {
-        var s = document.getElementById('cv-intelli-loader');
-        if (!s) {
-          s = document.createElement('script');
+      // choose a template tile to clone
+      var $template = $('#nav-music');
+      if (!$template.length) $template = $container.children('li').first();
+      if (!$template.length) return;
+
+      var $new = $template.clone(false, false);
+      $new.attr('id', 'nav-intelli-routing');
+
+      var $a = $new.find('a').first()
+        .attr('id', 'nav-intelli-routing-link')
+        .attr('href', '#')
+        .attr('title', 'Intelli Routing');
+
+      // label
+      $new.find('.nav-text').text('Intelli Routing');
+
+      // icon
+      $new.find('.nav-bg-image').css({
+        '-webkit-mask-image': "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')",
+        'mask-image':         "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')",
+        '-webkit-mask-repeat':'no-repeat',
+        'mask-repeat':        'no-repeat',
+        '-webkit-mask-position':'center 48%',
+        'mask-position':      'center 48%',
+        '-webkit-mask-size':  '71% 71%',
+        'mask-size':          '71% 71%',
+        'background-color':   'rgba(255,255,255,0.92)'
+      });
+
+      // click → lazy-load Smart Routing script once, then signal open
+      $a.off('click.intelli').on('click.intelli', function (e) {
+        e.preventDefault();
+        if (!window.__cvIntelliLoaded) {
+          var s = document.createElement('script');
           s.id = 'cv-intelli-loader';
           s.src = 'https://democlarityvoice-del.github.io/newsmartrouting/smartrouting.js?v=' + Date.now();
-          s.onload  = function(){ window.__cvIntelliLoaded = true; window.dispatchEvent(new CustomEvent('cv:intelli-routing:open')); };
-          s.onerror = function(){ console.error('Failed to load Intelli Routing script'); alert('Could not load Intelli Routing.'); };
+          s.onload = function () {
+            window.__cvIntelliLoaded = true;
+            window.dispatchEvent(new CustomEvent('cv:intelli-routing:open'));
+          };
+          s.onerror = function () {
+            console.error('Failed to load Intelli Routing script');
+            alert('Could not load Intelli Routing. Check network or script URL.');
+          };
           document.head.appendChild(s);
+        } else {
+          window.dispatchEvent(new CustomEvent('cv:intelli-routing:open'));
         }
-      } else {
-        window.dispatchEvent(new CustomEvent('cv:intelli-routing:open'));
-      }
-    });
+      });
+
+      // position: after Call History if present, else at end
+      var $after = $('#nav-callhistory');
+      if ($after.length) $new.insertAfter($after); else $new.appendTo($container);
+
+      console.log('Intelli Routing button inserted');
+    }
+
+    // SAFE predicate (no $) so it never crashes if jQuery isn't ready yet
+    when(function () {
+      try {
+        var c = document.querySelector('#nav-buttons');
+        return !!(c && (document.getElementById('nav-music') || c.querySelector('li')));
+      } catch (_) { return false; }
+    }, start);
+  } catch (e) {
+    console.error('Intelli button script error:', e && e.message ? e.message : e);
+  }
+})();
+
+/* --- SAFETY FALLBACK: robust, jQuery-free reinserter --- */
+;(function(){
+  function findNavContainer(){
+    var sels = ['#nav-buttons','ul#nav-buttons','.nav-buttons','nav #nav-buttons','#navigation #nav-buttons'];
+    for (var i=0;i<sels.length;i++){ var el = document.querySelector(sels[i]); if (el) return el; }
+    return null;
+  }
+  function insertIfMissing(){
+    if (document.getElementById('nav-intelli-routing')) return;
+    var container = findNavContainer(); if (!container) return;
+
+    var template = document.getElementById('nav-music') || container.querySelector('li'); if (!template) return;
+    var el = template.cloneNode(true); el.id = 'nav-intelli-routing';
+
+    var a = el.querySelector('a'); if (!a) { a = document.createElement('a'); el.appendChild(a); }
+    a.id = 'nav-intelli-routing-link'; a.href = '#'; a.title = 'Intelli Routing';
+    a.addEventListener('click', function(e){ e.preventDefault(); window.dispatchEvent(new CustomEvent('cv:intelli-routing:open')); });
 
     var txt = el.querySelector('.nav-text'); if (txt) txt.textContent = 'Intelli Routing';
     var bg  = el.querySelector('.nav-bg-image'); if (bg){
       bg.style.webkitMaskImage = "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')";
       bg.style.maskImage       = "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')";
-      bg.style.webkitMaskRepeat='no-repeat'; bg.style.maskRepeat='no-repeat';
+      bg.style.webkitMaskRepeat= 'no-repeat'; bg.style.maskRepeat='no-repeat';
       bg.style.webkitMaskPosition='center 48%'; bg.style.maskPosition='center 48%';
       bg.style.webkitMaskSize='71% 71%'; bg.style.maskSize='71% 71%';
       bg.style.backgroundColor='rgba(255,255,255,0.92)';
@@ -48,27 +122,12 @@
     if (after && after.parentNode===container) container.insertBefore(el, after.nextSibling);
     else container.appendChild(el);
 
-    console.log('Intelli Routing button inserted');
+    console.log('Intelli Routing button inserted (fallback)');
   }
-
-  // wait for nav container, then insert
-  (function whenNav(){
-    var nav = document.querySelector('#nav-buttons');
-    if (nav) insertNavButton();
-    else {
-      var obs = new MutationObserver(function(){
-        if (document.querySelector('#nav-buttons')) { obs.disconnect(); insertNavButton(); }
-      });
-      obs.observe(document.documentElement, { childList:true, subtree:true });
-    }
-  })();
-
-  // self-heal if DOM changes or the button gets removed
-  new MutationObserver(function(){
-    if (document.querySelector('#nav-buttons') && !document.getElementById('nav-intelli-routing')) insertNavButton();
-  }).observe(document.documentElement, { childList:true, subtree:true });
+  insertIfMissing();
+  if (document.readyState==='loading') document.addEventListener('DOMContentLoaded', insertIfMissing);
+  new MutationObserver(insertIfMissing).observe(document.documentElement,{childList:true,subtree:true});
 })();
-
 
 /* ===== Intelli Routing — Overlay (dock; scoped; banner/title swap; active state) ===== */
 /* ===== Intelli Routing — Overlay (dock; scoped; banner/title swap; active state) ===== */
@@ -668,60 +727,27 @@
   }
 
   /* ---------- virtual list ---------- */
-/* ===================== Virtual list helper (rows) ===================== */
-/* Replaces your current mountVirtualList so the right column only
-   renders if a label is provided. Passing '' or null hides it. */
-function mountVirtualList(container, items, rowH, rightLabel){
-  container.innerHTML=''; 
-  container.className='rows';
-
-  var pad = make('div','vpad');
-  pad.style.height = (items.length * rowH) + 'px';
-
-  var rows = make('div');
-  rows.style.position = 'absolute';
-  rows.style.left = 0; rows.style.right = 0; rows.style.top = 0;
-
-  container.appendChild(pad);
-  container.appendChild(rows);
-
-  function draw(){
-    var top = container.scrollTop, h = container.clientHeight;
-    var start = Math.max(0, Math.floor(top / rowH) - 4);
-    var end = Math.min(items.length, start + Math.ceil(h / rowH) + 8);
-
-    rows.style.transform = 'translateY(' + (start * rowH) + 'px)';
-    rows.innerHTML = '';
-
-    for (var i = start; i < end; i++){
-      var it = items[i];
-      var row = make('div','row');
-
-      var left = make(
-        'div',
-        null,
-        '<div class="row-num">' + it.number + '</div>' +
-        (it.label ? '<div class="muted">' + it.label + '</div>' : '')
-      );
-      row.appendChild(left);
-
-      // Only render the right cell if a label was provided
-      if (rightLabel){
-        var right = make('div','muted', rightLabel);
-        row.appendChild(right);
+  function mountVirtualList(container, items, rowH, rightLabel){
+    container.innerHTML=''; container.className='rows';
+    var pad=make('div','vpad'); pad.style.height=(items.length*rowH)+'px';
+    var rows=make('div'); rows.style.position='absolute'; rows.style.left=0; rows.style.right=0; rows.style.top=0;
+    container.appendChild(pad); container.appendChild(rows);
+    function draw(){
+      var top=container.scrollTop, h=container.clientHeight;
+      var start=Math.max(0, Math.floor(top/rowH)-4);
+      var end=Math.min(items.length, start+Math.ceil(h/rowH)+8);
+      rows.style.transform='translateY('+(start*rowH)+'px)'; rows.innerHTML='';
+      for(var i=start;i<end;i++){
+        var it=items[i], row=make('div','row');
+        var left=make('div',null,'<div class="row-num">'+it.number+'</div>'+(it.label?'<div class="muted">'+it.label+'</div>':'')); // label under TN
+        var right=make('div','muted', rightLabel || '');
+        row.appendChild(left); row.appendChild(right); rows.appendChild(row);
       }
-
-      rows.appendChild(row);
     }
+    container.addEventListener('scroll', draw); draw(); return { redraw: draw };
   }
 
-  container.addEventListener('scroll', draw);
-  draw();
-  return { redraw: draw };
-}
-
-
-  /* ---------- mount APP UI (left column with expand) ---------- */
+  /* ---------- mount UI (left column with expand) ---------- */
   function cvIntelliRoutingMount(root){
     try{
       root.innerHTML='';
@@ -759,103 +785,28 @@ function mountVirtualList(container, items, rowH, rightLabel){
         return (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
       }
 
-     /* ===================== MOUNT APP (compact) — updated parts ===================== */
-/* Drop these two functions in your MOUNT APP section to remove the right label
-   in both the inline expand list and the Preview drawer. */
+      function renderCard(g){
+        var title  = titleFor(g);
+        var isOpen = (openKey === g.key);
 
-function renderCard(g){
-  var title  = (g.type === 'User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name || g.type);
-  var isOpen = (openKey === g.key);
+        var card = make('div','card'); card.appendChild(make('div','left-bar'));
+        var hdr  = make('div','card-h');
 
-  var card = make('div','card'); card.appendChild(make('div','left-bar'));
+        var left = make('div','hdr-left');
+        left.appendChild(make('div','card-title', title));
+        left.appendChild(make('span','dest-badge', g.type));
+        hdr.appendChild(left);
 
-  var hdr  = make('div','card-h');
-  var left = make('div','hdr-left');
-  left.appendChild(make('div','card-title', title));
-  left.appendChild(make('span','dest-badge', g.type));
-  hdr.appendChild(left);
+        var right = make('div','hdr-right');
+        right.appendChild(make('span','count-badge', g.count + ' number' + (g.count===1?'':'s')));
+        var btn = make('button','btn', isOpen ? 'Collapse' : 'Expand');
+        right.appendChild(btn);
+        hdr.appendChild(right);
+        card.appendChild(hdr);
 
-  var right = make('div','hdr-right');
-  right.appendChild(make('span','count-badge', g.count + ' number' + (g.count===1?'':'s')));
-  var btn = make('button','btn', isOpen ? 'Collapse' : 'Expand');
-  right.appendChild(btn);
-  hdr.appendChild(right);
-  card.appendChild(hdr);
-
-  var body = make('div','card-b');
-  if (isOpen){
-    card.classList.add('open');
-
-    // actions (Export CSV for this destination only)
-    var acts = make('div','card-actions');
-    var exportBtn = make('button','btn','Export CSV');
-    exportBtn.onclick = function(){
-      var csv = 'Number,Label\n', i, n, lbl;
-      for(i=0;i<g.numbers.length;i++){
-        n=g.numbers[i]; lbl=(n.label||'').replace(/"/g,'""');
-        csv += '"' + n.number + '","' + lbl + '"\n';
-      }
-      var blob = new Blob([csv], {type:'text/csv'});
-      var url  = URL.createObjectURL(blob);
-      var a    = document.createElement('a');
-      a.href = url;
-      a.download = (g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_');
-      a.click();
-      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
-    };
-    acts.appendChild(exportBtn);
-    body.appendChild(acts);
-
-    // mini, scrollable list of numbers — NO right label passed
-    var rowsHost = make('div','rows');
-    body.appendChild(rowsHost);
-    mountVirtualList(rowsHost, g.numbers, 32, null);
-  }
-  card.appendChild(body);
-
-  btn.onclick = function(){
-    openKey = isOpen ? null : g.key;
-    renderGroups(); // re-render to toggle
-  };
-
-  return card;
-}
-
-function openDrawerForGroup(g){
-  var title = (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
-  document.getElementById('ir-drawer-title').textContent = title + ' — ' + g.type;
-
-  var body = document.getElementById('ir-drawer-body');
-  body.innerHTML = '';
-
-  var actions = make('div', null);
-  var exportBtn = make('button','btn','Export CSV');
-  exportBtn.style.marginBottom = '10px';
-  exportBtn.onclick = function(){
-    var csv='Number,Label\n', i, n, lbl;
-    for(i=0;i<g.numbers.length;i++){
-      n=g.numbers[i]; lbl=(n.label||'').replace(/"/g,'""');
-      csv+='"'+n.number+'","'+lbl+'"\n';
-    }
-    var blob=new Blob([csv],{type:'text/csv'});
-    var url=URL.createObjectURL(blob);
-    var a=document.createElement('a');
-    a.href=url;
-    a.download=(g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_');
-    a.click();
-    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
-  };
-  actions.appendChild(exportBtn);
-  body.appendChild(actions);
-
-  // drawer list — NO right label passed
-  var rows = make('div');
-  body.appendChild(rows);
-  mountVirtualList(rows, g.numbers, 34, null);
-
-  document.getElementById('ir-drawer').classList.add('open');
-}
-
+        var body = make('div','card-b');
+        if (isOpen){
+          card.classList.add('open');
 
           /* Export CSV for just this destination (Number,Destination) */
           var acts = make('div','card-actions');
@@ -943,4 +894,3 @@ function openDrawerForGroup(g){
   }
   window.cvIntelliRoutingMount = cvIntelliRoutingMount;
 })();
-
