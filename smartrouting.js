@@ -813,27 +813,60 @@
       }
 
       function renderCard(g){
-        var title  = titleFor(g);
-        var isOpen = (openKey === g.key);
+  var title  = titleFor(g);
+  var isOpen = (openKey === g.key);
 
-        var card = make('div','card'); card.appendChild(make('div','left-bar'));
-        var hdr  = make('div','card-h');
+  var card = make('div','card'); card.appendChild(make('div','left-bar'));
+  var hdr  = make('div','card-h');
 
-        var left = make('div','hdr-left');
-        left.appendChild(make('div','card-title', title));
-        left.appendChild(make('span','dest-badge', g.type));
-        hdr.appendChild(left);
+  var left = make('div','hdr-left');
+  left.appendChild(make('div','card-title', title));
+  left.appendChild(make('span','dest-badge', g.type));
+  hdr.appendChild(left);
 
-        var right = make('div','hdr-right');
-        right.appendChild(make('span','count-badge', g.count + ' number' + (g.count===1?'':'s')));
-        var btn = make('button','btn', isOpen ? 'Collapse' : 'Expand');
-        right.appendChild(btn);
-        hdr.appendChild(right);
-        card.appendChild(hdr);
+  var right = make('div','hdr-right');
+  right.appendChild(make('span','count-badge', g.count + ' number' + (g.count===1?'':'s')));
+  var btn = make('button','btn', isOpen ? 'Collapse' : 'Expand');
+  right.appendChild(btn);
+  hdr.appendChild(right);
+  card.appendChild(hdr);
 
-        var body = make('div','card-b');
-        if (isOpen){
-          card.classList.add('open');
+  var body = make('div','card-b');
+  if (isOpen){
+    card.classList.add('open');
+
+    // Export CSV for just this destination (Number,Destination)
+    var acts = make('div','card-actions');
+    var exportBtn = make('button','btn','Export CSV');
+    exportBtn.onclick = function(){
+      var dest = (title || '').replace(/"/g,'""');
+      var csv  = 'Number,Destination\n';
+      for (var i=0;i<g.numbers.length;i++){
+        csv += '"' + g.numbers[i].number + '","' + dest + '"\n';
+      }
+      var blob = new Blob([csv], {type:'text/csv'});
+      var url  = URL.createObjectURL(blob);
+      var a    = document.createElement('a');
+      a.href = url;
+      a.download = (g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_');
+      a.click();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    };
+    acts.appendChild(exportBtn);
+    body.appendChild(acts);
+
+    // mini list (no #ext on right)
+    var rowsHost = make('div','rows');
+    body.appendChild(rowsHost);
+    mountVirtualList(rowsHost, g.numbers, 32, null);
+  } // ← missing brace fixed
+
+  card.appendChild(body);
+
+  btn.onclick = function(){ openKey = isOpen ? null : g.key; renderGroups(); };
+  return card;
+}
+
 
           /* Export CSV for just this destination (Number,Destination) */
           var acts = make('div','card-actions');
