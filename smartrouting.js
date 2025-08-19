@@ -205,6 +205,17 @@
       '#cv-intelli-root .drawer-h{padding:10px 12px; background:#fafafa; border-bottom:1px solid #eee; display:flex; align-items:center; justify-content:space-between; font-weight:600}',
       '#cv-intelli-root .drawer-b{padding:12px; overflow:auto; max-height:calc(72vh - 44px)}',
       '#cv-intelli-root .drawer-x{background:transparent; border:none; font-size:18px; cursor:pointer; padding:0 4px}'
+      '#cv-intelli-root .ir-right{display:none!important;}',
+      '#cv-intelli-root .ir-left{width:520px!important;max-width:620px!important;}',
+      
+      /* card body is hidden by default; show when card is "open" */
+      '#cv-intelli-root .card-b{padding:8px 12px; display:none}',
+      '#cv-intelli-root .card.open .card-b{display:block}',
+
+      /* small scroll area for numbers */
+      '#cv-intelli-root .card-b .rows{max-height:180px; overflow:auto; border:1px solid #eee; border-radius:8px}',
+      '#cv-intelli-root .row{height:32px}',
+      '#cv-intelli-root .card-actions{margin-bottom:8px}',
     ].join('\n');
     var st=document.createElement('style'); st.id='cv-intelli-style'; st.type='text/css';
     st.appendChild(document.createTextNode(css)); document.head.appendChild(st);
@@ -255,19 +266,7 @@
     return root;
   }
 
-  /* compact in-card expand view */
-#cv-intelli-root .ir-right{display:none!important;}                 /* hide right column */
-#cv-intelli-root .ir-left{width:520px!important;max-width:620px!important;}
-
-#cv-intelli-root .card-b .rows{
-  max-height:180px!important;     /* small scroll area */
-  overflow:auto!important;
-  border:1px solid #eee!important;
-  border-radius:8px!important;
-}
-#cv-intelli-root .row{height:32px!important;}
-#cv-intelli-root .card-actions{margin-bottom:8px!important;}
-
+ 
   /* ------- Banner / Title helpers ------- */
   var _bannerEls = [], _origBannerTexts = [];
   function collectBannerEls(){
@@ -798,27 +797,21 @@
       root.innerHTML='';
       var wrap=make('div','ir');
       wrap.innerHTML =
-        '<div class="ir-left">'
-      +   '<div class="ir-h1">Destinations</div>'
-      +   '<input id="ir-q" class="ir-search" placeholder="Search destination or number…"/>'
-      +   '<div class="ir-filters">'
-      +     '<span data-ft="all" class="chip active">All</span>'
-      +     '<span data-ft="User" class="chip">User</span>'
-      +     '<span data-ft="Queue" class="chip">Queue</span>'
-      +     '<span data-ft="AA" class="chip">Auto Attendant</span>'
-      +     '<span data-ft="External" class="chip">External</span>'
-      +     '<span data-ft="VM" class="chip">Voicemail</span>'
-      +   '</div>'
-      +   '<div class="list-outer"><div id="ir-groups"></div></div>'
-      +   '<div id="ir-count" class="muted" style="margin-top:6px"></div>'
-      + '</div>'
-      + '<div class="ir-right">'
-      +   '<div class="ir-h1" style="display:flex; justify-content:flex-end;">'
-      +     '<button id="ir-open-preview" class="btn ghost" disabled>Preview routing</button>'
-      +   '</div>'
-      +   '<div id="ir-detail" class="muted"></div>'
-      + '</div>';
-      root.appendChild(wrap);
+         '<div class="ir-left">'
+        +   '<div class="ir-h1">Destinations</div>'
+        +   '<input id="ir-q" class="ir-search" placeholder="Search destination or number…"/>'
+        +   '<div class="ir-filters">'
+        +     '<span data-ft="all" class="chip active">All</span>'
+        +     '<span data-ft="User" class="chip">User</span>'
+        +     '<span data-ft="Queue" class="chip">Queue</span>'
+        +     '<span data-ft="AA" class="chip">Auto Attendant</span>'
+        +     '<span data-ft="External" class="chip">External</span>'
+        +     '<span data-ft="VM" class="chip">Voicemail</span>'
+        +   '</div>'
+        +   '<div class="list-outer"><div id="ir-groups"></div></div>'
+        +   '<div id="ir-count" class="muted" style="margin-top:6px"></div>'
+        + '</div>';
+
 
       // drawer
       var drawer = document.createElement('div');
@@ -833,36 +826,71 @@
       var groups=[], viewGroups=[], activeKey=null;
 
       function renderCard(g){
-        var title = (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
-        var card=make('div','card'); card.appendChild(make('div','left-bar'));
-        var hdr=make('div','card-h');
-        var left=make('div','hdr-left');
-        left.appendChild(make('div','card-title', title));
-        left.appendChild(make('span','dest-badge', g.type));
-        hdr.appendChild(left);
-        var right=make('div','hdr-right');
-        right.appendChild(make('span','count-badge', g.count + ' number' + (g.count===1?'':'s')));
-        var btn=make('button','btn', activeKey===g.key ? 'Deselect' : 'Select');
-        right.appendChild(btn); hdr.appendChild(right);
-        card.appendChild(hdr);
+  var title = (g.type==='User') ? nameForUserGroup(g, window.__cvUserDir||null) : (g.name||g.type);
+  var isOpen = (openKey === g.key);
 
-        var body=make('div','card-b'); // kept for structure, hidden by CSS to keep list thin
-        card.appendChild(body);
+  var card = make('div','card'); card.appendChild(make('div','left-bar'));
+  var hdr  = make('div','card-h');
+  var left = make('div','hdr-left');
+  left.appendChild(make('div','card-title', title));
+  left.appendChild(make('span','dest-badge', g.type));
+  hdr.appendChild(left);
 
-        btn.onclick=function(){
-          activeKey = (activeKey===g.key) ? null : g.key;
-          applyFilters(); // re-render to update button text
-          updatePreviewButton();
-        };
+  var right = make('div','hdr-right');
+  right.appendChild(make('span','count-badge', g.count + ' number' + (g.count===1?'':'s')));
+  var btn = make('button','btn', isOpen ? 'Collapse' : 'Expand');
+  right.appendChild(btn);
+  hdr.appendChild(right);
+  card.appendChild(hdr);
 
-        return card;
+  var body = make('div','card-b');
+  if (isOpen){
+    card.classList.add('open');
+
+    // actions (Export CSV for this destination only)
+    var acts = make('div','card-actions');
+    var exportBtn = make('button','btn','Export CSV');
+    exportBtn.onclick = function(){
+      var csv = 'Number,Label\n', i, n, lbl;
+      for(i=0;i<g.numbers.length;i++){
+        n=g.numbers[i]; lbl=(n.label||'').replace(/"/g,'""');
+        csv += '"' + n.number + '","' + lbl + '"\n';
       }
+      var blob = new Blob([csv], {type:'text/csv'});
+      var url  = URL.createObjectURL(blob);
+      var a    = document.createElement('a');
+      a.href = url;
+      a.download = (g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_');
+      a.click();
+      setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+    };
+    acts.appendChild(exportBtn);
+    body.appendChild(acts);
 
-      function renderGroups(){
-        var host=document.getElementById('ir-groups'); host.innerHTML='';
-        for(var i=0;i<viewGroups.length;i++){ host.appendChild(renderCard(viewGroups[i])); }
-        document.getElementById('ir-count').textContent = viewGroups.length + ' destination group' + (viewGroups.length===1?'':'s');
-      }
+    // mini, scrollable list of numbers
+    var rowsHost = make('div','rows');
+    body.appendChild(rowsHost);
+    var rightLabel = /^\d{2,6}$/.test(g.id) ? ('#'+g.id) : '';
+    mountVirtualList(rowsHost, g.numbers, 32, rightLabel);
+  }
+  card.appendChild(body);
+
+  btn.onclick = function(){
+    openKey = isOpen ? null : g.key;
+    renderGroups(); // re-render to toggle
+  };
+
+  return card;
+}
+
+function renderGroups(){
+  var host = document.getElementById('ir-groups');
+  host.innerHTML = '';
+  for (var i=0;i<viewGroups.length;i++) host.appendChild(renderCard(viewGroups[i]));
+  document.getElementById('ir-count').textContent =
+    viewGroups.length + ' destination group' + (viewGroups.length===1?'':'s');
+}
+
 
       function applyFilters(){
         var term=_normKey(document.getElementById('ir-q').value||'');
