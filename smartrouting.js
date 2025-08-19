@@ -204,7 +204,7 @@
       '#cv-intelli-root .drawer.open{opacity:1; transform:none; pointer-events:auto;}',
       '#cv-intelli-root .drawer-h{padding:10px 12px; background:#fafafa; border-bottom:1px solid #eee; display:flex; align-items:center; justify-content:space-between; font-weight:600}',
       '#cv-intelli-root .drawer-b{padding:12px; overflow:auto; max-height:calc(72vh - 44px)}',
-      '#cv-intelli-root .drawer-x{background:transparent; border:none; font-size:18px; cursor:pointer; padding:0 4px}'
+      '#cv-intelli-root .drawer-x{background:transparent; border:none; font-size:18px; cursor:pointer; padding:0 4px}',
       '#cv-intelli-root .ir-right{display:none!important;}',
       '#cv-intelli-root .ir-left{width:520px!important;max-width:620px!important;}',
       
@@ -811,8 +811,10 @@
         +   '<div class="list-outer"><div id="ir-groups"></div></div>'
         +   '<div id="ir-count" class="muted" style="margin-top:6px"></div>'
         + '</div>';
+ root.appendChild(wrap);
 
-
+// state
+    var groups = [], viewGroups = [], openKey = null;
       // drawer
       var drawer = document.createElement('div');
       drawer.id = 'ir-drawer';
