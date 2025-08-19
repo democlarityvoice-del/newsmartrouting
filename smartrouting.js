@@ -336,11 +336,26 @@
 })();
 
 /* ===================== Intelli Routing — COMPLETE DROP-IN (compact + drawer) ===================== */
+/* ===================== Intelli Routing — COMPLETE DROP-IN (compact + drawer) ===================== */
 ;(function(){
   "use strict";
 
+  /* ---------- tiny style override so number (left) + label (right) are tight ---------- */
+  (function ensureListFix(){
+    var id='cv-intelli-list-fix';
+    if (document.getElementById(id)) return;
+    var css = [
+      '#cv-intelli-root .row{display:flex; align-items:center; gap:12px; height:32px;',
+      '  padding:0 10px; border-bottom:1px solid #f6f6f6; font-variant-numeric:tabular-nums}',
+      '#cv-intelli-root .row-left{flex:0 0 auto; min-width:140px}',
+      '#cv-intelli-root .row-right{flex:1 1 auto; max-width:none; text-align:left;',
+      '  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}'
+    ].join('\n');
+    var st=document.createElement('style'); st.id=id; st.textContent=css; document.head.appendChild(st);
+  })();
+
   /* ---------- config ---------- */
-  window.cvIntelliExportUrl = window.cvIntelliExportUrl || '/portal/inventory/export.csv';
+  window.cvIntelliExportUrl  = window.cvIntelliExportUrl  || '/portal/inventory/export.csv';
   window.cvIntelliPreferMode = window.cvIntelliPreferMode || 'export'; // 'export' | 'api' | 'scrape'
   var __cvInvPromise = null;
 
@@ -356,8 +371,7 @@
     const ct=(r.headers.get('content-type')||'').toLowerCase();
     if(!r.ok) throw new Error('HTTP '+r.status+' on '+url);
     if(ct.includes('application/json')||ct.includes('text/json')) return r.json();
-    const txt=await r.text();
-    throw new Error('Non-JSON response from '+url+' — "'+txt.slice(0,80)+'…"');
+    const txt=await r.text(); throw new Error('Non-JSON response from '+url+' — "'+txt.slice(0,80)+'…"');
   }
   function formatTN(s){
     s=(s||'').replace(/[^\d]/g,''); if(s.length===11 && s[0]==='1') s=s.slice(1);
@@ -365,20 +379,27 @@
   }
   function _norm(v){ return (v==null?'':String(v)).trim(); }
   function _normKey(v){ return _norm(v).toLowerCase(); }
+  function extFromDestination(destText){
+    const s = _norm(destText);
+    let m = s.match(/^\s*(\d{2,6})\b/);
+    if (m) return m[1];
+    m = s.match(/\((\d{2,6})\)/) || s.match(/\b(?:ext(?:ension)?\.?|x|#)\s*(\d{2,6})\b/i) || s.match(/\b(\d{2,6})\b/);
+    return m ? m[1] : '';
+  }
 
-  /* ---------- STRICT TYPE from TREATMENT ONLY ---------- */
-  function _isAA(t){ t=_normKey(t); return /\b(ivr|auto[\s\-_]*attendant|aa|attendant\s*menu|main\s*menu|call\s*menu)\b/.test(t); }
-  function _isQueue(t){ t=_normKey(t); return /\b(queue|call\s*queue|acd)\b/.test(t); }
-  function _isUser(t){ t=_normKey(t); return /\b(user|person|extension)\b/.test(t); }
-  function _isVM(t){ t=_normKey(t); return /\b(vm|voice\s*mail|voicemail)\b/.test(t); }
-  function _isExternal(t){ t=_normKey(t); return /\b(available\s*number|unassigned|external|pstn|sip|route|number)\b/.test(t) || /number$/.test(t); }
-
-  function typeFromTreatment(t){
-    if (_isQueue(t))   return 'Queue';
-    if (_isAA(t))      return 'AA';
-    if (_isUser(t))    return 'User';
-    if (_isVM(t))      return 'VM';
-    if (_isExternal(t))return 'External';
+  /* ---------- classification (Treatment-first, then fallback to name) ---------- */
+  function isAAString(s){
+    s=_normKey(s); if(!s) return false;
+    return /\b(auto[\s\-_]*attendant|aa|ivr|main\s*menu|call\s*menu|attendant\s*menu|digital\s*receptionist)\b/.test(s);
+  }
+  function typeFromTreatment(treat, name){
+    var t=_normKey(treat), n=_normKey(name);
+    if (/\b(queue|call ?queue|acd)\b/.test(t))           return 'Queue';
+    if (/\b(auto[\s\-_]*attendant|aa|ivr)\b/.test(t))    return 'AA';
+    if (/\b(vm|voice ?mail|voicemail)\b/.test(t))        return 'VM';
+    if (/\b(user|person|extension)\b/.test(t))           return 'User';
+    if (/\b(available number|unassigned|external|pstn|sip|route|number)\b/.test(t) || /number$/.test(t)) return 'External';
+    if (isAAString(n))                                   return 'AA';
     return 'External';
   }
 
@@ -401,16 +422,8 @@
                .map(r => { var o = {}; for (var j=0; j<headers.length; j++) o[headers[j]] = (r[j] || '').trim(); return o; });
   }
 
-  function extFromDestination(destText){
-    const s = _norm(destText);
-    let m = s.match(/^\s*(\d{2,6})\b/);
-    if (m) return m[1];
-    m = s.match(/\((\d{2,6})\)/) || s.match(/\b(?:ext(?:ension)?\.?|x|#)\s*(\d{2,6})\b/i) || s.match(/\b(\d{2,6})\b/);
-    return m ? m[1] : '';
-  }
-
   function mapExportRecord(rec) {
-    function pick(o, ks) { for (var k of ks) if (o[k] != null && String(o[k]).trim() !== '') return String(o[k]).trim(); return ''; }
+    function pick(o, ks){ for (var k of ks) if (o[k]!=null && String(o[k]).trim()!=='') return String(o[k]).trim(); return ''; }
     var phone = pick(rec, ['Phone Number','Phone','Number','TN','DID','DNIS']);
     var treat = pick(rec, ['Treatment','Routing','Type','Destination Type','Owner Type']);
     var dname = pick(rec, ['Destination','Destination Name','Owner','Owner Name','Notes','Description']);
@@ -420,10 +433,11 @@
     var label  = pick(rec, ['Label','Alias','Tag']) || dname;
 
     return {
-      id:       (rec.id || rec.uuid || ('n' + (digits || '').slice(-8))),
+      id:       (rec.id || rec.uuid || ('n'+(digits||'').slice(-8))),
       number:   formatTN(phone),
       label:    label,
-      destType: typeFromTreatment(treat),    // STRICT: by Treatment only
+      treatRaw: treat,                                  // carry Treatment through
+      destType: typeFromTreatment(treat, dname),        // classify by Treatment
       destId:   String(did || ''),
       destName: _norm(dname)
     };
@@ -456,7 +470,7 @@
     const txt  = await res.text();
     const rows = parseCSV(txt).map(mapExportRecord);
     if (!rows.length) throw new Error('Export CSV parsed, but no rows found');
-    window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() }; // cache 5m
+    window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() }; // cache
     return rows;
   }
 
@@ -519,6 +533,22 @@
               };
             }
 
+            function pushFromCells(out, seen, c){
+              var tnDigits = (c.phone||'').replace(/[^\d]/g,'');
+              if (!tnDigits || seen.has(tnDigits)) return; seen.add(tnDigits);
+              var type = typeFromTreatment(c.treatment, c.destination);
+              var id   = (type==='User' || type==='AA' || type==='Queue') ? extFromDestination(c.destination) : '';
+              out.push({
+                id:       'n'+tnDigits.slice(-8),
+                number:   formatTN(c.phone),
+                label:    _norm(c.destination),
+                treatRaw: c.treatment,
+                destType: type,
+                destId:   String(id || ''),
+                destName: _norm(c.destination)
+              });
+            }
+
             function hook($, table){
               var dt = $(table).DataTable ? $(table).DataTable() :
                        ($(table).dataTable && $(table).dataTable().api ? $(table).dataTable().api() : null);
@@ -529,20 +559,7 @@
                 if (settings && !settings.oFeatures.bServerSide) {
                   var data = dt.rows({ search:'applied' }).nodes().toArray();
                   var rows = [], seen = new Set();
-                  data.forEach(function(tr){
-                    var c = readRowCells(tr); if (!c) return;
-                    var tnDigits = (c.phone||'').replace(/[^\d]/g,''); if (!tnDigits || seen.has(tnDigits)) return; seen.add(tnDigits);
-                    var type = typeFromTreatment(c.treatment);                              // STRICT by treatment
-                    var id   = (type==='User' || type==='AA' || type==='Queue') ? extFromDestination(c.destination) : '';
-                    rows.push({
-                      id:       'n'+tnDigits.slice(-8),
-                      number:   formatTN(c.phone),
-                      label:    _norm(c.destination),   // per-row description
-                      destType: type,
-                      destId:   String(id || ''),
-                      destName: _norm(c.destination)
-                    });
-                  });
+                  data.forEach(function(tr){ var c=readRowCells(tr); if(c) pushFromCells(rows, seen, c); });
                   cleanup();
                   window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() };
                   return resolve(rows);
@@ -551,22 +568,7 @@
 
               try{ dt.page.len(200).draw(false); }catch(_){}
               var out=[], seen=new Set();
-              function collectPage(){
-                dt.rows({ page:'current' }).every(function(){
-                  var c = readRowCells(this.node()); if (!c) return;
-                  var tnDigits = (c.phone||'').replace(/[^\d]/g,''); if(!tnDigits || seen.has(tnDigits)) return; seen.add(tnDigits);
-                  var type = typeFromTreatment(c.treatment);                                // STRICT by treatment
-                  var id   = (type==='User' || type==='AA' || type==='Queue') ? extFromDestination(c.destination) : '';
-                  out.push({
-                    id:       'n'+tnDigits.slice(-8),
-                    number:   formatTN(c.phone),
-                    label:    _norm(c.destination),
-                    destType: type,
-                    destId:   String(id || ''),
-                    destName: _norm(c.destination)
-                  });
-                });
-              }
+              function collectPage(){ dt.rows({ page:'current' }).every(function(){ var c=readRowCells(this.node()); if(c) pushFromCells(out, seen, c); }); }
               $(table).on('draw.dt', function(){
                 collectPage();
                 var info=dt.page.info();
@@ -588,30 +590,31 @@
     if (__cvInvPromise) return __cvInvPromise;
 
     __cvInvPromise = (async () => {
+      // prefer export
       if ((window.cvIntelliPreferMode || 'export') !== 'api') {
         try {
           const rows = await loadInventoryViaExport();
           if (rows && rows.length) return rows;
-        } catch (e) {
-          log('Export CSV failed — falling back:', e && e.message ? e.message : e);
-        }
+        } catch (e) { log('Export CSV failed — falling back:', e && e.message ? e.message : e); }
       }
 
+      // try API
       try {
         const base = await probeNumbersUrl();
         const raw  = await fetchJSON(addParam(base, 'limit', '5000'));
         const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
         if (!Array.isArray(list) || !list.length) throw new Error('Endpoint returned no items: '+base);
         const rows = list.map(function(x,i){
-          const typeRaw = x.dest_type || x.owner_type || x.type || x.destination_type || x.treatment;
-          const nameRaw = x.dest_name || x.owner_name || x.destination_name || x.destination || x.notes || '';
-          const type    = typeFromTreatment(typeRaw);                                  // STRICT by treatment
-          const idRaw   = x.dest_id   || x.owner_id   || x.destination_id || x.owner_ext || x.ext
-                          || (type==='User'||type==='AA'||type==='Queue' ? extFromDestination(nameRaw) : '');
+          const treatRaw = x.treatment || x.dest_type || x.owner_type || x.type || '';
+          const nameRaw  = x.dest_name || x.owner_name || x.destination_name || x.destination || x.notes || '';
+          const type     = typeFromTreatment(treatRaw, nameRaw);
+          const idRaw    = x.dest_id || x.owner_id || x.destination_id || x.owner_ext || x.ext
+                         || (type==='User'||type==='AA'||type==='Queue' ? extFromDestination(nameRaw) : '');
           return {
             id:       x.id || x.uuid || ('num'+i),
             number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
-            label:    x.label || x.alias || _norm(nameRaw),                             // per-row description
+            label:    x.label || x.alias || _norm(nameRaw),
+            treatRaw: treatRaw,
             destType: type,
             destId:   String(idRaw || ''),
             destName: _norm(nameRaw)
@@ -623,6 +626,7 @@
         log('API numbers failed — falling back to iframe scrape:', apiErr && apiErr.message ? apiErr.message : apiErr);
       }
 
+      // UI scrape
       return await scrapeInventoryViaIframe();
     })().finally(function(){ __cvInvPromise = null; });
 
@@ -707,46 +711,33 @@
     return g.id ? ('User '+g.id) : 'User';
   }
 
-  /* ---------- grouping (PRIMARY: by Treatment; SECOND: by destination extension) ---------- */
+  /* ---------- grouping (Treatment → extension) ---------- */
   function groupByDestination(rows){
     var map = Object.create(null), out = [];
     for (var i=0;i<rows.length;i++){
-      var r = rows[i];
-      var type = r.destType || 'External';             // <- from Treatment
-      var id   = _norm(r.destId);                      // <- extension, if any
+      var r    = rows[i];
+      var type = typeFromTreatment(r.treatRaw || '', r.destName || '');
+      var ext  = r.destId || extFromDestination(r.destName) || '';
       var name = _norm(r.destName);
+      var key  = type + '|' + (ext ? ('id:'+ext) : ('name:'+_normKey(name)));
 
-      var keyPart = id ? ('id:'+id) : ('name:'+_normKey(name));
-      var key = type + '|' + keyPart;
-
-      if (!map[key]) map[key] = { key, type, id, name, numbers: [] };
-      map[key].numbers.push({ id:r.id, number:r.number, label:(r.label || r.destName || '') });
+      if (!map[key]) map[key] = { key, type, id: ext, name, numbers: [] };
+      map[key].numbers.push({ id:r.id, number:r.number, label:(r.label || name || '') });
     }
     for (var k in map){ if (Object.prototype.hasOwnProperty.call(map,k)) { map[k].count = map[k].numbers.length; out.push(map[k]); } }
     out.sort(function(a,b){ return b.count - a.count || (a.type > b.type ? 1 : -1) || (_normKey(a.name) > _normKey(b.name) ? 1 : -1); });
     return out;
   }
 
-  /* ---------- virtual list (number left, description right) ---------- */
-  function mountVirtualList(container, items, rowH, right) {
+  /* ---------- virtual list (number left, label right) ---------- */
+  function mountVirtualList(container, items, rowH) {
     container.innerHTML = '';
     container.className  = 'rows';
 
-    var pad = make('div','vpad');
-    pad.style.height = (items.length * rowH) + 'px';
+    var pad = make('div','vpad'); pad.style.height = (items.length * rowH) + 'px';
+    var rows = make('div'); rows.style.position='absolute'; rows.style.left=0; rows.style.right=0; rows.style.top=0;
 
-    var rows = make('div');
-    rows.style.position = 'absolute';
-    rows.style.left = 0; rows.style.right = 0; rows.style.top = 0;
-
-    container.appendChild(pad);
-    container.appendChild(rows);
-
-    function rightTextOf(it, i){
-      if (typeof right === 'function') return right(it, i) || '';
-      if (right === true)              return it.label || '';
-      return right || '';
-    }
+    container.appendChild(pad); container.appendChild(rows);
 
     function draw(){
       var top = container.scrollTop, h = container.clientHeight;
@@ -759,12 +750,9 @@
       for (var i = start; i < end; i++){
         var it  = items[i];
         var row = make('div','row');
-
         row.appendChild(make('div','row-left','<div class="row-num">'+ it.number +'</div>'));
-
-        var rt = rightTextOf(it, i);
+        var rt = it.label || '';
         if (rt) row.appendChild(make('div','muted row-right', rt));
-
         rows.appendChild(row);
       }
     }
@@ -796,7 +784,6 @@
       + '</div>';
       root.appendChild(wrap);
 
-      /* optional drawer kept for future use */
       var drawer=document.getElementById('ir-drawer');
       if(!drawer){
         drawer=document.createElement('div');
@@ -835,6 +822,7 @@
         if (isOpen){
           card.classList.add('open');
 
+          // Export CSV for just this destination (Number,Destination)
           var acts = make('div','card-actions');
           var exportBtn = make('button','btn','Export CSV');
           exportBtn.onclick = function(){
@@ -854,10 +842,10 @@
           acts.appendChild(exportBtn);
           body.appendChild(acts);
 
-          /* mini list: number left, destination/description right */
+          // mini list: number (left) + description/label (right)
           var rowsHost = make('div','rows');
           body.appendChild(rowsHost);
-          mountVirtualList(rowsHost, g.numbers, 32, function(it){ return it.label || ''; });
+          mountVirtualList(rowsHost, g.numbers, 32);
         }
 
         card.appendChild(body);
