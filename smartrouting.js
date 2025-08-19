@@ -371,6 +371,7 @@
   "use strict";
 window.cvIntelliExportUrl = '/portal/inventory/export.csv';
 window.cvIntelliPreferMode = 'export'; // 'export' | 'api' | 'scrape'
+var __cvInvPromise = null; // single-flight gate for inventory loads
 
   /* ---------- tiny helpers ---------- */
   function log(){ try{ console.log.apply(console, ['[Intelli]'].concat([].slice.call(arguments))); }catch(_){} }
@@ -621,21 +622,36 @@ async function loadInventoryViaExport() {
     });
   }
 
-// Put near the top of your script (before loadInventory/probeExportUrl)
-window.cvIntelliExportUrl = '/portal/inventory/export.csv';
-window.cvIntelliPreferMode = 'export'; // 'export' | 'api' | 'scrape'
+async function loadInventory(){
+  // TTL cache: 5 minutes
+  if (window.__cvIntelliNumCache && (Date.now() - window.__cvIntelliNumCache.t < 5*60*1000)) {
+    return window.__cvIntelliNumCache.rows.slice();
+  }
+  if (__cvInvPromise) return __cvInvPromise; // single-flight
 
-  async function loadInventory(){
+  __cvInvPromise = (async () => {
+    // 1) Try Export first unless user forced 'api'
+    if ((window.cvIntelliPreferMode || 'export') !== 'api') {
+      try {
+        const rows = await loadInventoryViaExport();
+        if (rows && rows.length) return rows;
+      } catch (e) {
+        log('Export CSV failed — falling back:', e && e.message ? e.message : e);
+      }
+    }
+
+    // 2) API
     try {
       const base = await probeNumbersUrl();
       const raw  = await fetchJSON(addParam(base, 'limit', '5000'));
       const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
       if (!Array.isArray(list) || !list.length) throw new Error('Endpoint returned no items: '+base);
-      return list.map(function(x,i){
+      const rows = list.map(function(x,i){
         const typeRaw = x.dest_type || x.owner_type || x.type || x.destination_type || x.treatment;
         const type    = mapDestType(typeRaw);
         const nameRaw = x.dest_name || x.owner_name || x.destination_name || x.destination || x.notes || '';
-        const idRaw   = x.dest_id   || x.owner_id   || x.destination_id || x.owner_ext || x.ext || (type==='User'||type==='AA'||type==='Queue'? extFromDestination(nameRaw):'');
+        const idRaw   = x.dest_id   || x.owner_id   || x.destination_id || x.owner_ext || x.ext
+                        || (type==='User'||type==='AA'||type==='Queue' ? extFromDestination(nameRaw) : '');
         return {
           id:       x.id || x.uuid || ('num'+i),
           number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
@@ -645,11 +661,20 @@ window.cvIntelliPreferMode = 'export'; // 'export' | 'api' | 'scrape'
           destName: _norm(nameRaw)
         };
       });
+      window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() };
+      return rows;
     } catch(apiErr){
       log('API numbers failed — falling back to iframe scrape:', apiErr && apiErr.message ? apiErr.message : apiErr);
-      return await scrapeInventoryViaIframe();
     }
-  }
+
+    // 3) Scrape (last resort)
+    return await scrapeInventoryViaIframe();
+  })().finally(function(){ __cvInvPromise = null; });
+
+  return __cvInvPromise;
+}
+
+
 
   /* ===================== DATA: USERS DIRECTORY (for nice labels) ===================== */
   var USERS_URL = window.cvIntelliUsersUrl || null;
