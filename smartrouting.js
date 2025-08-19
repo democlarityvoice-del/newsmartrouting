@@ -337,27 +337,12 @@
 
 /* ===================== Intelli Routing — COMPLETE DROP-IN (compact + drawer) ===================== */
 /* ===================== Intelli Routing — COMPLETE DROP-IN (compact + drawer) ===================== */
-/* ===================== Intelli Routing — COMPLETE DROP-IN (compact + drawer) ===================== */
 ;(function(){
   "use strict";
 
-  /* ---------- tiny style override so number (left) + label (right) are tight ---------- */
-  (function ensureListFix(){
-    var id='cv-intelli-list-fix';
-    if (document.getElementById(id)) return;
-    var css = [
-      '#cv-intelli-root .row{display:flex; align-items:center; gap:12px; height:32px;',
-      '  padding:0 10px; border-bottom:1px solid #f6f6f6; font-variant-numeric:tabular-nums}',
-      '#cv-intelli-root .row-left{flex:0 0 auto; min-width:140px}',
-      '#cv-intelli-root .row-right{flex:1 1 auto; max-width:none; text-align:left;',
-      '  white-space:nowrap; overflow:hidden; text-overflow:ellipsis}'
-    ].join('\n');
-    var st=document.createElement('style'); st.id=id; st.textContent=css; document.head.appendChild(st);
-  })();
-
   /* ---------- config ---------- */
-  window.cvIntelliExportUrl  = window.cvIntelliExportUrl  || '/portal/inventory/export.csv';
-  window.cvIntelliPreferMode = window.cvIntelliPreferMode || 'export'; // 'export' | 'api' | 'scrape'
+  window.cvIntelliExportUrl   = window.cvIntelliExportUrl   || '/portal/inventory/export.csv';
+  window.cvIntelliPreferMode  = window.cvIntelliPreferMode  || 'export'; // 'export' | 'api' | 'scrape'
   var __cvInvPromise = null;
 
   /* ---------- helpers ---------- */
@@ -380,27 +365,56 @@
   }
   function _norm(v){ return (v==null?'':String(v)).trim(); }
   function _normKey(v){ return _norm(v).toLowerCase(); }
-  function extFromDestination(destText){
-    const s = _norm(destText);
-    let m = s.match(/^\s*(\d{2,6})\b/);
-    if (m) return m[1];
-    m = s.match(/\((\d{2,6})\)/) || s.match(/\b(?:ext(?:ension)?\.?|x|#)\s*(\d{2,6})\b/i) || s.match(/\b(\d{2,6})\b/);
+
+  // pull an extension/id out of "201 (Hannibal Lecter)" / "300 (Main Routing)" / "Text (755)" / "... Ext 755"
+  function extFromDestination(s){
+    s=_norm(s);
+    var m = s.match(/\((\d{2,6})\)\s*$/) 
+         || s.match(/\bExt(?:ension)?\s*[:#]?\s*(\d{2,6})\b/i)
+         || s.match(/\b(\d{2,6})\b(?!.*\b\d{2,6}\b)/); // last number in the string
     return m ? m[1] : '';
   }
 
-  /* ---------- classification (Treatment-first, then fallback to name) ---------- */
+  /* ---------- classification helpers ---------- */
   function isAAString(s){
-    s=_normKey(s); if(!s) return false;
-    return /\b(auto[\s\-_]*attendant|aa|ivr|main\s*menu|call\s*menu|attendant\s*menu|digital\s*receptionist)\b/.test(s);
+    s = _normKey(s);
+    if(!s) return false;
+    return /\b(aa|ivr|auto[\s\-_]*attendant|attendant\s*menu|call\s*menu|main\s*menu|digital\s*receptionist|receptionist)\b/.test(s)
+        || /^text\s*\(\d{2,6}\)/i.test(s); // your “Text (755)” case
   }
-  function typeFromTreatment(treat, name){
-    var t=_normKey(treat), n=_normKey(name);
-    if (/\b(queue|call ?queue|acd)\b/.test(t))           return 'Queue';
-    if (/\b(auto[\s\-_]*attendant|aa|ivr)\b/.test(t))    return 'AA';
-    if (/\b(vm|voice ?mail|voicemail)\b/.test(t))        return 'VM';
-    if (/\b(user|person|extension)\b/.test(t))           return 'User';
-    if (/\b(available number|unassigned|external|pstn|sip|route|number)\b/.test(t) || /number$/.test(t)) return 'External';
-    if (isAAString(n))                                   return 'AA';
+  function isQueueString(s){
+    s = _normKey(s); if(!s) return false;
+    return /\b(queue|call\s*queue|acd)\b/.test(s);
+  }
+  function isVMString(s){
+    s = _normKey(s); if(!s) return false;
+    return /\b(vm|voice\s*mail|voicemail)\b/.test(s);
+  }
+  function normalizeTreatment(t){
+    t = _normKey(t);
+    if (!t) return '';
+    if (isQueueString(t)) return 'Queue';
+    if (isVMString(t))    return 'VM';
+    if (/\b(available\s*number|unassigned)\b/.test(t)) return 'External';
+    if (/\b(external|pstn|sip|route|number)\b/.test(t) || /number$/.test(t)) return 'External';
+    if (/\b(user|person|extension)\b/.test(t)) return 'User';
+    if (/\bauto[\s\-_]*attendant\b/.test(t)) return 'AA';
+    return t.replace(/\s+/g,' ').replace(/\b\w/g,c=>c.toUpperCase()); // e.g. “Auto Attendant”
+  }
+
+  // final classifier with overrides from AA directory and heuristics
+  function classifyType(treatmentRaw, name, notes, ext, aaDir){
+    var t = normalizeTreatment(treatmentRaw);
+    // 1) hard override: AA directory by extension
+    if (aaDir && aaDir.extSet && ext && aaDir.extSet.has(ext)) return 'AA';
+    // 2) when export lies (“User” but actually AA), look at name/notes
+    if ((t === 'User' || !t) && (isAAString(name) || isAAString(notes))) return 'AA';
+    // 3) trust clean types
+    if (t) return t;
+    // 4) last resort from name
+    if (isQueueString(name)) return 'Queue';
+    if (isVMString(name))    return 'VM';
+    if (isAAString(name))    return 'AA';
     return 'External';
   }
 
@@ -423,23 +437,25 @@
                .map(r => { var o = {}; for (var j=0; j<headers.length; j++) o[headers[j]] = (r[j] || '').trim(); return o; });
   }
 
-  function mapExportRecord(rec) {
-    function pick(o, ks){ for (var k of ks) if (o[k]!=null && String(o[k]).trim()!=='') return String(o[k]).trim(); return ''; }
+  function mapExportRecord(rec, aaDir){
+    function pick(o, ks) { for (var k of ks) if (o[k] != null && String(o[k]).trim() !== '') return String(o[k]).trim(); return ''; }
     var phone = pick(rec, ['Phone Number','Phone','Number','TN','DID','DNIS']);
     var treat = pick(rec, ['Treatment','Routing','Type','Destination Type','Owner Type']);
-    var dname = pick(rec, ['Destination','Destination Name','Owner','Owner Name','Notes','Description']);
+    var dname = pick(rec, ['Destination','Destination Name','Owner','Owner Name','Description']);
+    var notes = pick(rec, ['Notes','Comment']);
     var did   = pick(rec, ['Dest ID','Destination ID','Owner ID','Extension','Ext','Login','Username','User ID']);
-    if (!did && dname) did = extFromDestination(dname);
+    var ext   = did || extFromDestination(dname);
     var digits = (phone || '').replace(/[^\d]/g,'');
     var label  = pick(rec, ['Label','Alias','Tag']) || dname;
 
+    var finalType = classifyType(treat, dname, notes, ext, aaDir);
+
     return {
-      id:       (rec.id || rec.uuid || ('n'+(digits||'').slice(-8))),
+      id:       (rec.id || rec.uuid || ('n' + (digits || '').slice(-8))),
       number:   formatTN(phone),
       label:    label,
-      treatRaw: treat,                                  // carry Treatment through
-      destType: typeFromTreatment(treat, dname),        // classify by Treatment
-      destId:   String(did || ''),
+      destType: finalType,
+      destId:   String(ext || did || ''),
       destName: _norm(dname)
     };
   }
@@ -464,18 +480,75 @@
     return '/portal/inventory/export.csv';
   }
 
-  async function loadInventoryViaExport() {
+  /* ---------- Auto Attendants directory (API → scrape fallback) ---------- */
+  async function loadAADirectory(){
+    // try JSON endpoints
+    const candidates = [
+      '/portal/api/auto_attendants',
+      '/portal/api/v1/auto_attendants',
+      '/portal/api/attendants',
+      '/api/auto_attendants'
+    ];
+    for (let i=0;i<candidates.length;i++){
+      try{
+        const raw  = await fetchJSON(addParam(candidates[i],'limit','5000'));
+        const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.attendants || []);
+        if (Array.isArray(list) && list.length){
+          const byExt = Object.create(null), extSet = new Set();
+          list.forEach(a=>{
+            const name = _norm(a.name || a.display_name || a.title);
+            const ext  = _norm(a.ext || a.extension || a.id || '');
+            if (ext) { byExt[ext] = name ? (name + ' ('+ext+')') : ('AA ('+ext+')'); extSet.add(ext); }
+          });
+          return { byExt, extSet };
+        }
+      }catch(_){}
+    }
+    // scrape UI
+    return new Promise(function(resolve){
+      try{
+        var frame=document.getElementById('cv-intelli-aaframe');
+        if(frame && frame.parentNode) frame.parentNode.removeChild(frame);
+        frame=document.createElement('iframe');
+        frame.id='cv-intelli-aaframe';
+        frame.src='/portal/auto_attendants';
+        frame.setAttribute('aria-hidden','true');
+        Object.assign(frame.style,{position:'fixed',left:'-9999px',top:'-9999px',width:'1px',height:'1px',opacity:'0'});
+        document.body.appendChild(frame);
+        var done=false; function finish(x){ if(done) return; done=true; try{ frame.remove(); }catch(_){ } resolve(x||{ byExt:{}, extSet:new Set() }); }
+        frame.onload=function(){
+          try{
+            var doc=frame.contentWindow.document;
+            var rows=[].slice.call(doc.querySelectorAll('table tr, .list tbody tr, .table tr'));
+            var byExt=Object.create(null), extSet=new Set();
+            rows.forEach(function(tr){
+              var tds=tr.querySelectorAll?tr.querySelectorAll('td,th'):[];
+              if (tds.length<2) return;
+              var name=(tds[0].textContent||'').trim();
+              var ext='';
+              for (var i=1;i<tds.length;i++){ var m=(tds[i].textContent||'').match(/\b(\d{2,6})\b/); if(m){ ext=m[1]; break; } }
+              if (ext){ byExt[ext]=name? (name+' ('+ext+')') : ('AA ('+ext+')'); extSet.add(ext); }
+            });
+            finish({ byExt, extSet });
+          }catch(_){ finish(); }
+        };
+        setTimeout(function(){ finish(); }, 30000);
+      }catch(_){ resolve({ byExt:{}, extSet:new Set() }); }
+    });
+  }
+
+  /* ---------- inventory loaders ---------- */
+  async function loadInventoryViaExport(aaDir) {
     const exp = await probeExportUrl();
     const res = await fetch(exp, { credentials: 'include', headers: { 'Accept': 'text/csv, */*' } });
     if (!res.ok) throw new Error('HTTP ' + res.status + ' fetching export CSV');
     const txt  = await res.text();
-    const rows = parseCSV(txt).map(mapExportRecord);
+    const rows = parseCSV(txt).map(function(r){ return mapExportRecord(r, aaDir); });
     if (!rows.length) throw new Error('Export CSV parsed, but no rows found');
-    window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() }; // cache
+    window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() };
     return rows;
   }
 
-  /* ---------- numbers via API or iframe (fallback) ---------- */
   var NUMBERS_URL = window.cvIntelliNumbersUrl || null;
   async function probeNumbersUrl(){
     if (NUMBERS_URL) return NUMBERS_URL;
@@ -485,139 +558,47 @@
       '/api/numbers','/ns-api/numbers','/portal/number/list'
     ];
     for (let i=0;i<candidates.length;i++){
-      try {
+      try{
         const data = await fetchJSON(addParam(candidates[i], 'limit', '25'));
         const list = Array.isArray(data) ? data : (data.items || data.results || data.data || data.numbers);
         if (Array.isArray(list)) { log('numbers endpoint:', candidates[i]); NUMBERS_URL = candidates[i]; return NUMBERS_URL; }
-      } catch(_) {}
+      }catch(_){}
     }
     throw new Error('No JSON endpoint; falling back to iframe scrape.');
   }
 
-  function scrapeInventoryViaIframe(){
-    return new Promise(function(resolve, reject){
-      try{
-        if (window.__cvIntelliNumCache && (Date.now() - window.__cvIntelliNumCache.t < 5*60*1000)) {
-          return resolve(window.__cvIntelliNumCache.rows.slice());
-        }
-        var frame=document.getElementById('cv-intelli-invframe');
-        if(frame && frame.parentNode) frame.parentNode.removeChild(frame);
-        frame=document.createElement('iframe');
-        frame.id='cv-intelli-invframe';
-        frame.src='/portal/inventory';
-        frame.setAttribute('aria-hidden','true');
-        Object.assign(frame.style, { position:'fixed', left:'-9999px', top:'-9999px', width:'1px', height:'1px', opacity:'0' });
-        document.body.appendChild(frame);
-
-        var killed=false, timeout=setTimeout(function(){ cleanup(); reject(new Error('Inventory iframe timed out')); }, 45000);
-        function cleanup(){ if(killed) return; killed=true; clearTimeout(timeout); if(frame && frame.parentNode) frame.parentNode.removeChild(frame); }
-
-        frame.onload=function(){
-          try{
-            var win=frame.contentWindow, doc=win.document, tries=0;
-            (function waitDT(){
-              tries++;
-              var $=win.jQuery||win.$;
-              var table=doc.querySelector('table.dataTable')||doc.querySelector('table');
-              if($ && $.fn && $.fn.dataTable && table) hook($, table);
-              else if(tries<160) setTimeout(waitDT, 250);
-              else { cleanup(); reject(new Error('Inventory table not found')); }
-            })();
-
-            function readRowCells(tr){
-              var tds = tr && tr.querySelectorAll ? tr.querySelectorAll('td,th') : [];
-              if (tds.length < 3) return null;
-              return {
-                phone: (tds[0].textContent||'').trim(),
-                treatment: (tds[1].textContent||'').trim(),
-                destination: (tds[2].textContent||'').trim()
-              };
-            }
-
-            function pushFromCells(out, seen, c){
-              var tnDigits = (c.phone||'').replace(/[^\d]/g,'');
-              if (!tnDigits || seen.has(tnDigits)) return; seen.add(tnDigits);
-              var type = typeFromTreatment(c.treatment, c.destination);
-              var id   = (type==='User' || type==='AA' || type==='Queue') ? extFromDestination(c.destination) : '';
-              out.push({
-                id:       'n'+tnDigits.slice(-8),
-                number:   formatTN(c.phone),
-                label:    _norm(c.destination),
-                treatRaw: c.treatment,
-                destType: type,
-                destId:   String(id || ''),
-                destName: _norm(c.destination)
-              });
-            }
-
-            function hook($, table){
-              var dt = $(table).DataTable ? $(table).DataTable() :
-                       ($(table).dataTable && $(table).dataTable().api ? $(table).dataTable().api() : null);
-              if(!dt){ cleanup(); return reject(new Error('DataTables not active on inventory table')); }
-
-              try {
-                var settings = dt.settings()[0];
-                if (settings && !settings.oFeatures.bServerSide) {
-                  var data = dt.rows({ search:'applied' }).nodes().toArray();
-                  var rows = [], seen = new Set();
-                  data.forEach(function(tr){ var c=readRowCells(tr); if(c) pushFromCells(rows, seen, c); });
-                  cleanup();
-                  window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() };
-                  return resolve(rows);
-                }
-              } catch(_) { /* fall through */ }
-
-              try{ dt.page.len(200).draw(false); }catch(_){}
-              var out=[], seen=new Set();
-              function collectPage(){ dt.rows({ page:'current' }).every(function(){ var c=readRowCells(this.node()); if(c) pushFromCells(out, seen, c); }); }
-              $(table).on('draw.dt', function(){
-                collectPage();
-                var info=dt.page.info();
-                if(info.page < info.pages-1) dt.page('next').draw(false);
-                else { cleanup(); window.__cvIntelliNumCache = { t: Date.now(), rows: out.slice() }; resolve(out); }
-              });
-              collectPage(); dt.draw(false);
-            }
-          }catch(e){ cleanup(); reject(e); }
-        };
-      }catch(ex){ reject(ex); }
-    });
-  }
-
-  async function loadInventory(){
+  async function loadInventory(aaDir){
     if (window.__cvIntelliNumCache && (Date.now() - window.__cvIntelliNumCache.t < 5*60*1000)) {
       return window.__cvIntelliNumCache.rows.slice();
     }
     if (__cvInvPromise) return __cvInvPromise;
 
     __cvInvPromise = (async () => {
-      // prefer export
       if ((window.cvIntelliPreferMode || 'export') !== 'api') {
         try {
-          const rows = await loadInventoryViaExport();
+          const rows = await loadInventoryViaExport(aaDir);
           if (rows && rows.length) return rows;
-        } catch (e) { log('Export CSV failed — falling back:', e && e.message ? e.message : e); }
+        } catch (e) {
+          log('Export CSV failed — falling back:', e && e.message ? e.message : e);
+        }
       }
 
-      // try API
       try {
         const base = await probeNumbersUrl();
         const raw  = await fetchJSON(addParam(base, 'limit', '5000'));
         const list = Array.isArray(raw) ? raw : (raw.items || raw.results || raw.data || raw.numbers || []);
         if (!Array.isArray(list) || !list.length) throw new Error('Endpoint returned no items: '+base);
         const rows = list.map(function(x,i){
-          const treatRaw = x.treatment || x.dest_type || x.owner_type || x.type || '';
-          const nameRaw  = x.dest_name || x.owner_name || x.destination_name || x.destination || x.notes || '';
-          const type     = typeFromTreatment(treatRaw, nameRaw);
-          const idRaw    = x.dest_id || x.owner_id || x.destination_id || x.owner_ext || x.ext
-                         || (type==='User'||type==='AA'||type==='Queue' ? extFromDestination(nameRaw) : '');
+          const typeRaw = x.dest_type || x.owner_type || x.type || x.destination_type || x.treatment;
+          const nameRaw = x.dest_name || x.owner_name || x.destination_name || x.destination || x.notes || '';
+          const ext     = String(x.dest_id || x.owner_id || x.destination_id || x.owner_ext || x.ext || extFromDestination(nameRaw) || '');
+          const type    = classifyType(typeRaw, nameRaw, x.notes || '', ext, aaDir);
           return {
             id:       x.id || x.uuid || ('num'+i),
             number:   formatTN(x.number || x.tn || x.did || x.dnis || x.e164 || x.phone || ''),
             label:    x.label || x.alias || _norm(nameRaw),
-            treatRaw: treatRaw,
             destType: type,
-            destId:   String(idRaw || ''),
+            destId:   ext,
             destName: _norm(nameRaw)
           };
         });
@@ -627,14 +608,85 @@
         log('API numbers failed — falling back to iframe scrape:', apiErr && apiErr.message ? apiErr.message : apiErr);
       }
 
-      // UI scrape
-      return await scrapeInventoryViaIframe();
+      // last-resort: scrape UI (kept as-is, but still feeds classifyType with aaDir)
+      return new Promise(function(resolve, reject){
+        try{
+          var frame=document.getElementById('cv-intelli-invframe');
+          if(frame && frame.parentNode) frame.parentNode.removeChild(frame);
+          frame=document.createElement('iframe');
+          frame.id='cv-intelli-invframe';
+          frame.src='/portal/inventory';
+          frame.setAttribute('aria-hidden','true');
+          Object.assign(frame.style,{position:'fixed',left:'-9999px',top:'-9999px',width:'1px',height:'1px',opacity:'0'});
+          document.body.appendChild(frame);
+
+          var killed=false, timeout=setTimeout(function(){ cleanup(); reject(new Error('Inventory iframe timed out')); }, 45000);
+          function cleanup(){ if(killed) return; killed=true; clearTimeout(timeout); try{ frame.remove(); }catch(_){ } }
+
+          frame.onload=function(){
+            try{
+              var win=frame.contentWindow, doc=win.document, tries=0;
+              (function waitDT(){
+                tries++;
+                var $=win.jQuery||win.$;
+                var table=doc.querySelector('table.dataTable')||doc.querySelector('table');
+                if($ && $.fn && $.fn.dataTable && table) hook($, table);
+                else if(tries<160) setTimeout(waitDT, 250);
+                else { cleanup(); reject(new Error('Inventory table not found')); }
+              })();
+
+              function readRowCells(tr){
+                var tds = tr && tr.querySelectorAll ? tr.querySelectorAll('td,th') : [];
+                if (tds.length < 3) return null;
+                return {
+                  phone: (tds[0].textContent||'').trim(),
+                  treatment: (tds[1].textContent||'').trim(),
+                  destination: (tds[2].textContent||'').trim(),
+                  notes: (tds[3] && tds[3].textContent||'').trim()
+                };
+              }
+
+              function hook($, table){
+                var dt = $(table).DataTable ? $(table).DataTable() :
+                         ($(table).dataTable && $(table).dataTable().api ? $(table).dataTable().api() : null);
+                if(!dt){ cleanup(); return reject(new Error('DataTables not active on inventory table')); }
+
+                var out=[], seen=new Set();
+                function collectPage(){
+                  dt.rows({ page:'current' }).every(function(){
+                    var c = readRowCells(this.node()); if (!c) return;
+                    var tnDigits = (c.phone||'').replace(/[^\d]/g,''); if(!tnDigits || seen.has(tnDigits)) return; seen.add(tnDigits);
+                    var ext  = extFromDestination(c.destination);
+                    var type = classifyType(c.treatment, c.destination, c.notes, ext, aaDir);
+                    out.push({
+                      id:       'n'+tnDigits.slice(-8),
+                      number:   formatTN(c.phone),
+                      label:    _norm(c.destination),
+                      destType: type,
+                      destId:   String(ext || ''),
+                      destName: _norm(c.destination)
+                    });
+                  });
+                }
+                $(table).on('draw.dt', function(){
+                  collectPage();
+                  var info=dt.page.info();
+                  if(info.page < info.pages-1) dt.page('next').draw(false);
+                  else { cleanup(); window.__cvIntelliNumCache = { t: Date.now(), rows: out.slice() }; resolve(out); }
+                });
+                try{ dt.page.len(200).draw(false); }catch(_){}
+                collectPage(); dt.draw(false);
+              }
+            }catch(e){ cleanup(); reject(e); }
+          };
+        }catch(ex){ reject(ex); }
+      });
     })().finally(function(){ __cvInvPromise = null; });
 
     return __cvInvPromise;
   }
 
-  /* ---------- users directory (for nicer User titles) ---------- */
+  /* ---------- users directory (unchanged, just for nicer User titles) ---------- */
   var USERS_URL = window.cvIntelliUsersUrl || null;
   async function probeUsersUrl(){
     if (USERS_URL) return USERS_URL;
@@ -669,8 +721,8 @@
         Object.assign(frame.style, { position:'fixed', left:'-9999px', top:'-9999px', width:'1px', height:'1px', opacity:'0' });
         document.body.appendChild(frame);
 
-        var killed=false, timeout=setTimeout(function(){ cleanup(); reject(new Error('Users iframe timed out')); }, 30000);
-        function cleanup(){ if(killed) return; killed=true; clearTimeout(timeout); if(frame && frame.parentNode) frame.parentNode.removeChild(frame); }
+        var killed=false, timeout=setTimeout(function(){ cleanup(); resolve({ byId:{}, byExt:{} }); }, 30000);
+        function cleanup(){ if(killed) return; killed=true; clearTimeout(timeout); try{ frame.remove(); }catch(_){ } }
 
         frame.onload=function(){
           try{
@@ -687,9 +739,9 @@
               byId[id]=label; byExt[ext]=label;
             });
             cleanup(); resolve({ byId, byExt });
-          }catch(e){ cleanup(); reject(e); }
+          }catch(e){ cleanup(); resolve({ byId:{}, byExt:{} }); }
         };
-      }catch(ex){ reject(ex); }
+      }catch(ex){ resolve({ byId:{}, byExt:{} }); }
     });
   }
   async function loadUserDirectory(){
@@ -700,8 +752,7 @@
       const byId=Object.create(null), byExt=Object.create(null);
       list.forEach(u => { const d=mkUserDisplay(u); if(d.id) byId[d.id]=d.label; if(d.ext) byExt[d.ext]=d.label; });
       return { byId, byExt };
-    }catch(e){
-      log('users JSON failed — scraping UI:', e && e.message ? e.message : e);
+    }catch(_){
       return await scrapeUsersViaIframe();
     }
   }
@@ -712,33 +763,45 @@
     return g.id ? ('User '+g.id) : 'User';
   }
 
-  /* ---------- grouping (Treatment → extension) ---------- */
+  /* ---------- grouping ---------- */
   function groupByDestination(rows){
     var map = Object.create(null), out = [];
     for (var i=0;i<rows.length;i++){
-      var r    = rows[i];
-      var type = typeFromTreatment(r.treatRaw || '', r.destName || '');
-      var ext  = r.destId || extFromDestination(r.destName) || '';
+      var r = rows[i];
+      var type = r.destType || 'External';
+      var id   = _norm(r.destId);
       var name = _norm(r.destName);
-      var key  = type + '|' + (ext ? ('id:'+ext) : ('name:'+_normKey(name)));
+      var keyPart = (id ? ('id:'+id) : ('name:'+_normKey(name)));
+      var key = type + '|' + keyPart;
 
-      if (!map[key]) map[key] = { key, type, id: ext, name, numbers: [] };
-      map[key].numbers.push({ id:r.id, number:r.number, label:(r.label || name || '') });
+      if (!map[key]) map[key] = { key, type, id, name, numbers: [] };
+      map[key].numbers.push({ id:r.id, number:r.number, label:(r.label || r.destName || '') });
     }
     for (var k in map){ if (Object.prototype.hasOwnProperty.call(map,k)) { map[k].count = map[k].numbers.length; out.push(map[k]); } }
     out.sort(function(a,b){ return b.count - a.count || (a.type > b.type ? 1 : -1) || (_normKey(a.name) > _normKey(b.name) ? 1 : -1); });
     return out;
   }
 
-  /* ---------- virtual list (number left, label right) ---------- */
-  function mountVirtualList(container, items, rowH) {
+  /* ---------- virtual list (left number, right description) ---------- */
+  function mountVirtualList(container, items, rowH, right) {
     container.innerHTML = '';
     container.className  = 'rows';
 
-    var pad = make('div','vpad'); pad.style.height = (items.length * rowH) + 'px';
-    var rows = make('div'); rows.style.position='absolute'; rows.style.left=0; rows.style.right=0; rows.style.top=0;
+    var pad = make('div','vpad');
+    pad.style.height = (items.length * rowH) + 'px';
 
-    container.appendChild(pad); container.appendChild(rows);
+    var rows = make('div');
+    rows.style.position = 'absolute';
+    rows.style.left = 0; rows.style.right = 0; rows.style.top = 0;
+
+    container.appendChild(pad);
+    container.appendChild(rows);
+
+    function rightTextOf(it, i){
+      if (typeof right === 'function') return right(it, i) || '';
+      if (right === true)              return it.label || '';
+      return right || '';
+    }
 
     function draw(){
       var top = container.scrollTop, h = container.clientHeight;
@@ -751,9 +814,12 @@
       for (var i = start; i < end; i++){
         var it  = items[i];
         var row = make('div','row');
+
         row.appendChild(make('div','row-left','<div class="row-num">'+ it.number +'</div>'));
-        var rt = it.label || '';
+
+        var rt = rightTextOf(it, i);
         if (rt) row.appendChild(make('div','muted row-right', rt));
+
         rows.appendChild(row);
       }
     }
@@ -815,15 +881,14 @@
         var right = make('div','hdr-right');
         right.appendChild(make('span','count-badge', g.count + ' number' + (g.count===1?'':'s')));
         var btn = make('button','btn', isOpen ? 'Collapse' : 'Expand');
-        right.appendChild(btn);
         hdr.appendChild(right);
+        hdr.appendChild(btn);
         card.appendChild(hdr);
 
         var body = make('div','card-b');
         if (isOpen){
           card.classList.add('open');
 
-          // Export CSV for just this destination (Number,Destination)
           var acts = make('div','card-actions');
           var exportBtn = make('button','btn','Export CSV');
           exportBtn.onclick = function(){
@@ -835,18 +900,15 @@
             var blob = new Blob([csv], {type:'text/csv'});
             var url  = URL.createObjectURL(blob);
             var a    = document.createElement('a');
-            a.href = url;
-            a.download = (g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_');
-            a.click();
+            a.href = url; a.download = (g.type+' '+(title||'')+' numbers.csv').replace(/\s+/g,'_'); a.click();
             setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
           };
           acts.appendChild(exportBtn);
           body.appendChild(acts);
 
-          // mini list: number (left) + description/label (right)
           var rowsHost = make('div','rows');
           body.appendChild(rowsHost);
-          mountVirtualList(rowsHost, g.numbers, 32);
+          mountVirtualList(rowsHost, g.numbers, 32, function(it){ return it.label || ''; });
         }
 
         card.appendChild(body);
@@ -885,20 +947,29 @@
         this.classList.add('active'); applyFilters();
       });});
 
-      loadInventory().then(async function(rows){
-        groups = groupByDestination(rows||[]);
-        try { window.__cvUserDir = await loadUserDirectory(); } catch(e){ log('user names not resolved:', e && e.message ? e.message : e); }
-        applyFilters();
-      }).catch(function(err){
-        var msg='<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
-          + '<div style="font-weight:600; margin-bottom:6px;">Could not load phone number inventory</div>'
-          + '<div style="margin-bottom:6px;">' + (err && err.message ? err.message : err) + '</div>'
-          + '<div style="font-size:12px;">Set endpoints if known:<br>'
-          + '<code>window.cvIntelliNumbersUrl = "/exact/numbers/path";</code><br>'
-          + '<code>window.cvIntelliUsersUrl   = "/exact/users/path";</code><br>then click the tile again.</div>'
-          + '</div>';
-        root.innerHTML = msg;
-      });
+      (async function(){
+        try{
+          const aaDir = await loadAADirectory();              // ← load AA list first
+          window.__cvAADir = aaDir;
+
+          const rows  = await loadInventory(aaDir);           // ← classify with AA override
+          groups = groupByDestination(rows||[]);
+
+          try { window.__cvUserDir = await loadUserDirectory(); } catch(_){}
+
+          applyFilters();
+        }catch(err){
+          var msg='<div style="color:#a00; border:1px solid #f3c2b8; background:#fff3f0; padding:10px; border-radius:8px;">'
+            + '<div style="font-weight:600; margin-bottom:6px;">Could not load phone number inventory</div>'
+            + '<div style="margin-bottom:6px;">' + (err && err.message ? err.message : err) + '</div>'
+            + '<div style="font-size:12px;">Set endpoints if known:<br>'
+            + '<code>window.cvIntelliNumbersUrl = "/exact/numbers/path";</code><br>'
+            + '<code>window.cvIntelliUsersUrl   = "/exact/users/path";</code><br>'
+            + 'then click the tile again.</div>'
+            + '</div>';
+          root.innerHTML = msg;
+        }
+      })();
     }catch(e){
       try{ root.innerHTML='<div style="color:#a00">Mount error: '+(e && e.message ? e.message : e)+'</div>'; }catch(_){}
       console.error(e);
