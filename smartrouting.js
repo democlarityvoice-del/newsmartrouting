@@ -336,6 +336,14 @@
     }
   }
 
+  function isAAString(s){
+  s = _normKey(s);
+  if (!s) return false;
+  // covers: “Auto Attendant”, “Auto-Attendant”, “AutoAttendant”, “IVR”, “Main Menu”, etc.
+  return /\b(aa|ivr|auto[\s\-_]*attendant|attendant\s*menu|call\s*menu|main\s*menu|digital\s*receptionist|receptionist)\b/.test(s);
+}
+
+  
   window.addEventListener('cv:intelli-routing:open', openOverlay, false);
   window.cvIntelliOpen = openOverlay;
 })();
@@ -373,44 +381,26 @@
 
   /* ---------- type mapping (from Treatment + Destination text) ---------- */
   function mapDestType(t, name){
-    var tt = _normKey(t);
-    var nm = _normKey(name);
+  // normalize both the “treatment” and the destination/name
+  var tt = _normKey(t);
+  var nn = _normKey(name);
 
-    // Auto Attendant (AA, IVR, Auto/Digital Receptionist, etc.)
-    if (
-      /^(aa|ivr|auto[\s\-_]*attendant|auto[\s\-_]*receptionist|digital[\s\-_]*receptionist)$/.test(tt) ||
-      /\b(aa|ivr|auto[\s\-_]*attendant|auto[\s\-_]*receptionist|digital[\s\-_]*receptionist)\b/.test(nm)
-    ) return 'AA';
+  // queues first (already working for you)
+  if (/\b(queue|call ?queue|acd)\b/.test(tt)) return 'Queue';
+  // strong “User” labels
+  if (/\b(user|person|extension)\b/.test(tt)) return 'User';
+  // AA via treatment OR by reading the destination/name
+  if (isAAString(tt) || isAAString(nn)) return 'AA';
+  // voicemail
+  if (/\b(vm|voice ?mail|voicemail)\b/.test(tt)) return 'VM';
+  // explicit externals / available
+  if (/\b(available number|unassigned)\b/.test(tt)) return 'External';
+  if (/\b(external|pstn|sip|route|number)\b/.test(tt) || /number$/.test(tt)) return 'External';
 
-    // Queues / ACD / Hunt/Ring Groups
-    if (
-      /^(queue|call ?queue|acd|hunt(?: |-)group|ring ?group)$/.test(tt) ||
-      /\b(queue|acd|hunt(?: |-)group|ring ?group)\b/.test(nm)
-    ) return 'Queue';
+  // default: treat as External instead of misclassifying as User
+  return 'External';
+}
 
-    // Voicemail
-    if (/^(vm|voice ?mail|voicemail)$/.test(tt) || /\b(voicemail|vm)\b/.test(nm)) return 'VM';
-
-    // Explicit user-ish
-    if (/^(user|person|extension)$/.test(tt)) return 'User';
-
-    // External / unassigned
-    if (
-      /^(external|pstn|sip|route|number|available number|unassigned)$/.test(tt) ||
-      /\b(available number|unassigned)\b/.test(nm)
-    ) return 'External';
-
-    // Fallback
-    return tt ? (tt.charAt(0).toUpperCase() + tt.slice(1)) : 'External';
-  }
-
-  function extFromDestination(destText){
-    const s = _norm(destText);
-    let m = s.match(/^\s*(\d{2,6})\b/);
-    if (m) return m[1];
-    m = s.match(/\((\d{2,6})\)/) || s.match(/\b(?:ext(?:ension)?\.?|x|#)\s*(\d{2,6})\b/i) || s.match(/\b(\d{2,6})\b/);
-    return m ? m[1] : '';
-  }
 
   /* ---------- CSV helpers (Inventory → rows) ---------- */
   function parseCSV(text) {
@@ -445,7 +435,7 @@
       id:       (rec.id || rec.uuid || ('n' + (digits || '').slice(-8))),
       number:   formatTN(phone),
       label:    label,
-      destType: mapDestType(treat, dname),                          // ← pass name too
+      const type    = mapDestType(typeRaw, nameRaw);  // ← pass name too
       destId:   String(did || ''),
       destName: _norm(dname)
     };
