@@ -160,15 +160,84 @@
   function ensureStyle(){
     if (document.getElementById('cv-intelli-style')) return;
     var css = [
+      /* ROOT + LAYOUT */
       '#cv-intelli-root{display:none; --cv-accent:'+DEFAULT_ACCENT+'; --cv-tint:'+DEFAULT_TINT+';}',
       '#cv-intelli-root.dock{position:absolute; inset:0; z-index:9999}',
       '#cv-intelli-root.float{position:fixed; inset:0; z-index:999999}',
-      '#cv-intelli-root .cv-back{position:absolute; inset:0; background:#fff; opacity:1}', /* solid backdrop */
-      '#cv-intelli-root .cv-panel{position:absolute; inset:0; background:#fff; box-sizing:border-box; font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif}',
-      '#cv-intelli-root.float .cv-panel{margin:4% auto; max-width:960px; height:auto; border-radius:12px; box-shadow:0 8px 40px rgba(0,0,0,.12)}',
-      '#cv-intelli-root .cv-h{display:flex; align-items:center; justify-content:space-between; padding:12px 16px; background:linear-gradient(180deg, var(--cv-tint), #fff); border-bottom:1px solid rgba(229,112,39,.22); font-weight:600}',
-      '#cv-intelli-root .cv-x{cursor:pointer; background:transparent; border:none; font-size:20px; line-height:1}',
-      '#cv-intelli-root .cv-b{padding:16px; height:calc(100% - 52px); overflow:auto}',
+      '#cv-intelli-root .cv-back{position:absolute; inset:0; background:#fff; opacity:1}',
+
+      /* Panel: flex so body always scrolls; no gradient header */
+     '#cv-intelli-root .cv-panel{position:absolute; inset:0; background:#fff; box-sizing:border-box; font:14px/1.4 system-ui,Segoe UI,Roboto,Helvetica,Arial,sans-serif; display:flex; flex-direction:column; overflow:hidden}',
+     '#cv-intelli-root.float .cv-panel{margin:4% auto; max-width:960px; height:auto; border-radius:12px; box-shadow:0 8px 40px rgba(0,0,0,.12)}',
+
+    /* Hide the big banner header (we’ll use a tiny floating close instead) */
+    '#cv-intelli-root .cv-h{display:none}',
+
+    /* Floating close */
+    '#cv-intelli-root .cv-x-float{position:absolute; top:8px; right:10px; z-index:2; cursor:pointer; background:#fff; border:1px solid #e5e5e5; width:28px; height:28px; border-radius:8px; font-size:18px; line-height:26px; text-align:center}',
+    '#cv-intelli-root .cv-x-float:hover{filter:brightness(.97)}',
+
+    /* Body must flex to bottom and scroll */
+    '#cv-intelli-root .cv-b{padding:12px 12px 14px; flex:1 1 auto; overflow:auto}',
+
+  /* ===== scoped UI (denser) ===== */
+  // floating close (since header is hidden)
+var panel = root.querySelector('.cv-panel');
+if (!panel.querySelector('.cv-x-float')) {
+  var x = document.createElement('button');
+  x.className = 'cv-x-float';
+  x.title = 'Close';
+  x.textContent = '×';
+  x.addEventListener('click', close);
+  panel.appendChild(x);
+}
+
+  '#cv-intelli-root .ir{display:flex; gap:12px; min-height:420px}',
+  '#cv-intelli-root .ir-left{width:320px; flex:0 0 320px}',
+  '#cv-intelli-root .ir-right{flex:1; min-width:0}',
+
+  '#cv-intelli-root .ir-h1{font-weight:600; margin:0 0 6px; font-size:13px; color:#444}',
+  '#cv-intelli-root .ir-search{width:100%; padding:7px 9px; border:1px solid #ddd; border-radius:10px}',
+  '#cv-intelli-root .ir-search:focus{outline:none; box-shadow:0 0 0 3px rgba(229,112,39,.28); border-color:var(--cv-accent)}',
+
+  '#cv-intelli-root .ir-filters{display:flex; gap:6px; flex-wrap:wrap; margin:6px 0 6px}',
+  '#cv-intelli-root .chip{font-size:12px; padding:3px 7px; border:1px solid #e5e5e5; border-radius:999px; background:#fafafa; cursor:pointer}',
+  '#cv-intelli-root .chip:hover{background:#f6f7fb}',
+  '#cv-intelli-root .chip.active{background:var(--cv-tint); border-color:var(--cv-accent); color:#4a2a00}',
+
+  '#cv-intelli-root .tiny-tip{margin:4px 0 8px; font-size:12px; color:#666}',
+
+  '#cv-intelli-root .list-outer{border:1px solid #eee; border-radius:10px; background:#fff}',
+  '#cv-intelli-root .card{position:relative; border:1px solid #eee; border-radius:12px; background:#fff; box-shadow:0 6px 22px rgba(0,0,0,.05); margin-bottom:8px}',
+  '#cv-intelli-root .card .left-bar{position:absolute; left:0; top:0; bottom:0; width:5px; border-top-left-radius:12px; border-bottom-left-radius:12px; background:var(--cv-accent)}',
+  '#cv-intelli-root .card-h{position:relative; display:flex; justify-content:space-between; align-items:center; gap:10px; padding:10px 12px 10px 18px; border-bottom:1px solid #eee; background:#fafafa; border-top-left-radius:12px; border-top-right-radius:12px}',
+  '#cv-intelli-root .card-title{font-weight:600; line-height:1.2; font-size:13px}',
+  '#cv-intelli-root .hdr-left{display:flex; align-items:center; gap:8px; min-width:0}',
+  '#cv-intelli-root .hdr-right{display:flex; align-items:center; gap:8px; flex-shrink:0}',
+  '#cv-intelli-root .count-badge{font-size:11px; background:var(--cv-tint); color:#4a2a00; border:1px solid var(--cv-accent); border-radius:999px; padding:1px 7px; white-space:nowrap}',
+  '#cv-intelli-root .dest-badge{font-size:11px; padding:1px 6px; border-radius:6px; background:var(--cv-tint); border:1px solid var(--cv-accent); white-space:nowrap}',
+  '#cv-intelli-root .card-b{padding:10px 12px}',
+
+  /* Virtual rows – shorter height */
+  '#cv-intelli-root .rows{position:relative; height:200px; overflow:auto; border:1px solid #f2f2f2; border-radius:8px; background:#fff}',
+  '#cv-intelli-root .vpad{height:0}',
+  '#cv-intelli-root .row{display:flex; align-items:center; justify-content:space-between; height:34px; padding:0 8px; border-bottom:1px solid #f6f6f6; font-variant-numeric:tabular-nums; font-size:13px}',
+  '#cv-intelli-root .row:hover{background:#fff7f2}',
+  '#cv-intelli-root .row-num{font-variant-numeric:tabular-nums}',
+
+  '#cv-intelli-root .muted{color:#666}',
+  '#cv-intelli-root .controls{display:flex; gap:8px; align-items:center; margin:0 0 8px}',
+  '#cv-intelli-root .sel{padding:6px 8px; border:1px solid #ddd; border-radius:8px; background:#fff}',
+  '#cv-intelli-root .sel:focus{outline:none; box-shadow:0 0 0 3px rgba(229,112,39,.28); border-color:var(--cv-accent)}',
+  '#cv-intelli-root .btn{cursor:pointer; border:none; background:var(--cv-accent); color:#fff; padding:7px 10px; border-radius:10px; line-height:1; font-weight:600; font-size:12px}',
+  '#cv-intelli-root .btn:hover{filter:brightness(.95)}',
+
+  /* Floating “Preview routing” toggle */
+  '#cv-intelli-root .preview-fab{position:absolute; right:46px; top:8px; z-index:2; background:#fff; color:#333; border:1px solid #e5e5e5; border-radius:999px; padding:5px 10px; font-size:12px; font-weight:600}',
+  '#cv-intelli-root .preview-fab:hover{filter:brightness(.97)}'
+].join('\\n');
+
+  
 
       /* ===== scoped UI ===== */
       '#cv-intelli-root .ir{display:flex; gap:16px; min-height:420px}',
@@ -920,6 +989,26 @@ async function loadInventory(){
       +   '<div id="ir-detail" class="muted">Expand a destination on the left to view numbers and previews.</div>'
       + '</div>';
       root.appendChild(wrap);
+    // One-time tip (instead of repeating on every card)
+var tip = document.createElement('div');
+tip.className = 'tiny-tip';
+tip.textContent = 'Tip: click a destination’s “Expand” or use “Preview routing” to open details.';
+wrap.querySelector('.ir-left').insertBefore(tip, wrap.querySelector('.list-outer'));
+
+// Start with right pane hidden; add a floating toggle
+var rightPane = wrap.querySelector('.ir-right');
+rightPane.style.display = 'none';
+var fab = document.createElement('button');
+fab.className = 'preview-fab';
+fab.id = 'ir-preview-toggle';
+fab.textContent = 'Preview routing';
+root.closest('#cv-intelli-root').querySelector('.cv-panel').appendChild(fab);
+
+function setRight(open){
+  rightPane.style.display = open ? '' : 'none';
+  fab.textContent = open ? 'Hide preview' : 'Preview routing';
+}
+fab.addEventListener('click', function(){ setRight(rightPane.style.display === 'none'); });
 
       function renderNonAADetail(group, host){
         var rightLabel = /^\d{2,6}$/.test(group.id) ? ('#'+group.id) : '';
