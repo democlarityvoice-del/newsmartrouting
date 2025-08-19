@@ -369,6 +369,7 @@
 /* ===================== Intelli Routing — COMPLETE DROP-IN ===================== */
 ;(function(){
   "use strict";
+window.__cvIntelliLoaded = true; // prevent loading external smartrouting.js
 window.cvIntelliExportUrl = '/portal/inventory/export.csv';
 window.cvIntelliPreferMode = 'export'; // 'export' | 'api' | 'scrape'
 var __cvInvPromise = null; // single-flight gate for inventory loads
