@@ -76,174 +76,6 @@
       console.log('Intelli Routing button inserted');
     }
 
-    when(function () { return $('#nav-buttons').length > 0; }, start);
-  } catch (e) {
-    console.error('Intelli button script error:', e && e.message ? e.message : e);
-  }
-})(); // <—— missing close was here
-
-// ===== Intelli Routing bootstrap (no scrolling) ===== iframe- fixed
-;(function () {
-  try {
-    // wait until the nav exists
-    function when(pred, fn) {
-      if (pred()) return fn();
-      var obs = new MutationObserver(function () {
-        if (pred()) { obs.disconnect(); fn(); }
-      });
-      obs.observe(document.documentElement, { childList: true, subtree: true });
-      var iv = setInterval(function () {
-        if (pred()) { clearInterval(iv); fn(); }
-      }, 300);
-    }
-
-    function start() {
-      if (document.getElementById('nav-intelli-routing')) return; // no duplicates
-
-      var $container = $('#nav-buttons');
-      if (!$container.length) return;
-
-      // choose a template tile to clone
-      var $template = $('#nav-music');
-      if (!$template.length) $template = $container.children('li').first();
-      if (!$template.length) return;
-
-      var $new = $template.clone(false, false);
-      $new.attr('id', 'nav-intelli-routing');
-
-      var $a = $new.find('a').first()
-        .attr('id', 'nav-intelli-routing-link')
-        .attr('href', '#')
-        .attr('title', 'Intelli Routing');
-
-      // label
-      $new.find('.nav-text').text('Intelli Routing');
-
-      // icon (your URL exactly as requested)
-      $new.find('.nav-bg-image').css({
-        '-webkit-mask-image': "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')",
-        'mask-image':         "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')",
-        '-webkit-mask-repeat':'no-repeat',
-        'mask-repeat':        'no-repeat',
-        '-webkit-mask-position':'center 48%',
-        'mask-position':      'center 48%',
-        '-webkit-mask-size':  '71% 71%',
-        'mask-size':          '71% 71%',
-        'background-color':   'rgba(255,255,255,0.92)'
-      });
-
-      // click → lazy-load your Smart Routing script once, then signal open
-      $a.off('click.intelli').on('click.intelli', function (e) {
-        e.preventDefault();
-        if (!window.__cvIntelliLoaded) {
-          var s = document.createElement('script');
-          s.id = 'cv-intelli-loader';
-          s.src = 'https://democlarityvoice-del.github.io/newsmartrouting/smartrouting.js?v=' + Date.now();
-          s.onload = function () {
-            window.__cvIntelliLoaded = true;
-            window.dispatchEvent(new CustomEvent('cv:intelli-routing:open'));
-          };
-          s.onerror = function () {
-            console.error('Failed to load Intelli Routing script');
-            alert('Could not load Intelli Routing. Check network or script URL.');
-          };
-          document.head.appendChild(s);
-        } else {
-          window.dispatchEvent(new CustomEvent('cv:intelli-routing:open'));
-        }
-      });
-
-      // position: after Call History if present, else at end
-      var $after = $('#nav-callhistory');
-      if ($after.length) $new.insertAfter($after); else $new.appendTo($container);
-
-      console.log('Intelli Routing button inserted');
-    }
-
-    when(function () { return $('#nav-buttons').length > 0; }, start);
-  } catch (e) {
-    console.error('Intelli button script error:', e && e.message ? e.message : e);
-  }
-})(); // <—— missing close was here
-
-// ===== Intelli Routing bootstrap (no scrolling) ===== iframe- fixed
-;(function () {
-  try {
-    // wait until the nav exists
-    function when(pred, fn) {
-      if (pred()) return fn();
-      var obs = new MutationObserver(function () {
-        if (pred()) { obs.disconnect(); fn(); }
-      });
-      obs.observe(document.documentElement, { childList: true, subtree: true });
-      var iv = setInterval(function () {
-        if (pred()) { clearInterval(iv); fn(); }
-      }, 300);
-    }
-
-    function start() {
-      if (document.getElementById('nav-intelli-routing')) return; // no duplicates
-
-      var $container = $('#nav-buttons');
-      if (!$container.length) return;
-
-      // choose a template tile to clone
-      var $template = $('#nav-music');
-      if (!$template.length) $template = $container.children('li').first();
-      if (!$template.length) return;
-
-      var $new = $template.clone(false, false);
-      $new.attr('id', 'nav-intelli-routing');
-
-      var $a = $new.find('a').first()
-        .attr('id', 'nav-intelli-routing-link')
-        .attr('href', '#')
-        .attr('title', 'Intelli Routing');
-
-      // label
-      $new.find('.nav-text').text('Intelli Routing');
-
-      // icon (your URL exactly as requested)
-      $new.find('.nav-bg-image').css({
-        '-webkit-mask-image': "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')",
-        'mask-image':         "url('https://raw.githubusercontent.com/democlarityvoice-del/intellirouting-icon/refs/heads/main/icon.svg')",
-        '-webkit-mask-repeat':'no-repeat',
-        'mask-repeat':        'no-repeat',
-        '-webkit-mask-position':'center 48%',
-        'mask-position':      'center 48%',
-        '-webkit-mask-size':  '71% 71%',
-        'mask-size':          '71% 71%',
-        'background-color':   'rgba(255,255,255,0.92)'
-      });
-
-      // click → lazy-load your Smart Routing script once, then signal open
-      $a.off('click.intelli').on('click.intelli', function (e) {
-        e.preventDefault();
-        if (!window.__cvIntelliLoaded) {
-          var s = document.createElement('script');
-          s.id = 'cv-intelli-loader';
-          s.src = 'https://democlarityvoice-del.github.io/newsmartrouting/smartrouting.js?v=' + Date.now();
-          s.onload = function () {
-            window.__cvIntelliLoaded = true;
-            window.dispatchEvent(new CustomEvent('cv:intelli-routing:open'));
-          };
-          s.onerror = function () {
-            console.error('Failed to load Intelli Routing script');
-            alert('Could not load Intelli Routing. Check network or script URL.');
-          };
-          document.head.appendChild(s);
-        } else {
-          window.dispatchEvent(new CustomEvent('cv:intelli-routing:open'));
-        }
-      });
-
-      // position: after Call History if present, else at end
-      var $after = $('#nav-callhistory');
-      if ($after.length) $new.insertAfter($after); else $new.appendTo($container);
-
-      console.log('Intelli Routing button inserted');
-    }
-
     // SAFE predicate (no $) so it never crashes if jQuery isn't ready yet
     when(function () {
       try {
@@ -581,6 +413,85 @@ window.cvIntelliPreferMode = 'export'; // 'export' | 'api' | 'scrape'
     m = s.match(/\((\d{2,6})\)/) || s.match(/\b(?:ext(?:ension)?\.?|x|#)\s*(\d{2,6})\b/i) || s.match(/\b(\d{2,6})\b/);
     return m ? m[1] : '';
   }
+
+  // ---- Export (CSV) helpers ----
+function parseCSV(text) {
+  text = String(text || '');
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // strip BOM
+  var rows = [], row = [], i = 0, c, q = false, field = '';
+  for (; i < text.length; i++) {
+    c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i+1] === '"') { field += '"'; i++; } else q = false; }
+      else field += c;
+    } else {
+      if (c === '"') q = true;
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === '\n') { row.push(field); rows.push(row); row = []; field = ''; }
+      else if (c === '\r') { /* ignore */ }
+      else field += c;
+    }
+  }
+  row.push(field); rows.push(row);
+  var headers = (rows.shift() || []).map(h => (h || '').trim());
+  return rows.filter(r => r.some(x => x && String(x).trim().length))
+             .map(r => {
+               var o = {};
+               for (var j = 0; j < headers.length; j++) o[headers[j]] = (r[j] || '').trim();
+               return o;
+             });
+}
+
+function mapExportRecord(rec) {
+  function pick(o, keys) { for (var k of keys) if (o[k] != null && String(o[k]).trim() !== '') return String(o[k]).trim(); return ''; }
+  var phone = pick(rec, ['Phone Number','Phone','Number','TN','DID','DNIS']);
+  var treat = pick(rec, ['Treatment','Routing','Type','Destination Type','Owner Type']);
+  var dname = pick(rec, ['Destination','Destination Name','Owner','Owner Name','Notes','Description']);
+  var did   = pick(rec, ['Dest ID','Destination ID','Owner ID','Extension','Ext','Login','Username','User ID']);
+  if (!did && dname) did = extFromDestination(dname);
+  var digits = (phone || '').replace(/[^\d]/g,'');
+  return {
+    id:       (rec.id || rec.uuid || ('n' + (digits || '').slice(-8))),
+    number:   formatTN(phone),
+    label:    pick(rec, ['Label','Alias','Tag']),
+    destType: mapDestType(treat),
+    destId:   String(did || ''),
+    destName: _norm(dname)
+  };
+}
+
+// Known export path (already set near top): /portal/inventory/export.csv
+async function probeExportUrl() {
+  if (window.cvIntelliExportUrl) return window.cvIntelliExportUrl;
+  const candidates = [
+    '/portal/inventory/export.csv',
+    '/portal/inventory/export?format=csv',
+    '/portal/inventory?export=csv'
+  ];
+  for (let i = 0; i < candidates.length; i++) {
+    try {
+      const res = await fetch(candidates[i], { credentials: 'include' });
+      const ct  = (res.headers.get('content-type') || '').toLowerCase();
+      if (res.ok && (ct.includes('text/csv') || ct.includes('application/csv') || ct.includes('octet-stream'))) {
+        window.cvIntelliExportUrl = candidates[i];
+        return window.cvIntelliExportUrl;
+      }
+    } catch (_) {}
+  }
+  // If all else fails, just return the primary
+  return '/portal/inventory/export.csv';
+}
+
+async function loadInventoryViaExport() {
+  const exp = await probeExportUrl();
+  const res = await fetch(exp, { credentials: 'include', headers: { 'Accept': 'text/csv, */*' } });
+  if (!res.ok) throw new Error('HTTP ' + res.status + ' fetching export CSV');
+  const txt  = await res.text();
+  const rows = parseCSV(txt).map(mapExportRecord);
+  if (!rows.length) throw new Error('Export CSV parsed, but no rows found');
+  window.__cvIntelliNumCache = { t: Date.now(), rows: rows.slice() }; // cache 5m (checked elsewhere)
+  return rows;
+}
 
   /* ===================== DATA: NUMBERS (API → iframe) ===================== */
   var NUMBERS_URL = window.cvIntelliNumbersUrl || null;
