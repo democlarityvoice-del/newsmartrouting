@@ -366,7 +366,11 @@
   }
   function _norm(v){ return (v==null?'':String(v)).trim(); }
   function _normKey(v){ return _norm(v).toLowerCase(); }
-  function extFromDestination(s){ var m=String(s||'').match(/\b(\d{3,6})\b/); return m?m[1]:''; }
+ function extFromDestination(s){
+  var m = String(s || '').match(/\b(\d{2,6})\b/);
+  return m ? m[1] : '';
+}
+
 
   /* ---------- classification (treatment-first) ---------- */
   function isAAString(s){
@@ -396,44 +400,43 @@
 
   /* ---------- Auto Attendants index (portal/attendants) — cached, no timeouts ---------- */
 /* ---------- Auto Attendants index (robust iframe loader) ---------- */
+/* ---------- Auto Attendants index (robust iframe loader; minimal fix) ---------- */
 var __AA_CACHE = __AA_CACHE || null;
 
 async function loadAAIndex() {
-  // If cached and fresh, return cached set
+  // Return cached (≤5 minutes)
   if (__AA_CACHE && (Date.now() - __AA_CACHE.t < 5 * 60 * 1000)) return __AA_CACHE.set;
 
   return new Promise(function(resolve) {
     try {
-      // Remove old frame if present
+      // Clean old frame
       let frame = document.getElementById('cv-intelli-aa');
       if (frame) frame.remove();
 
-      // Create hidden iframe
+      // Hidden iframe to attendants page
       frame = document.createElement('iframe');
-      frame.id = 'cv-intelli-aa';
+      frame.id  = 'cv-intelli-aa';
       frame.src = '/portal/attendants';
       Object.assign(frame.style, {
-        position: 'fixed',
-        left: '-9999px',
-        top: '-9999px',
-        width: '1px',
-        height: '1px',
-        opacity: '0',
-        pointerEvents: 'none'
+        position: 'fixed', left: '-9999px', top: '-9999px',
+        width: '1px', height: '1px', opacity: '0', pointerEvents: 'none'
       });
       frame.setAttribute('aria-hidden', 'true');
       document.body.appendChild(frame);
 
-      frame.onload = function() {
+      frame.onload = function () {
         try {
           const doc = frame.contentDocument || frame.contentWindow.document;
-          const rows = [...doc.querySelectorAll('tr')];
-          const set = new Set();
+          const rows = Array.from(doc.querySelectorAll('tr'));
+          const set  = new Set();
+
+          // NOTE: capture group 1; collect *all* 2–6 digit extensions in each row
+          const re = /\b(\d{2,6})\b/g;
 
           rows.forEach(tr => {
-            const txt = tr.innerText.trim();
-            const match = txt.match(/\b\d{2,6}\b/); // Grab any 2–6 digit ext
-            if (match) set.add(match[1]);
+            const txt = (tr.innerText || '').trim();
+            if (!txt) return;
+            for (const m of txt.matchAll(re)) set.add(m[1]);  // <-- key fix (use m[1], not match[1] on a non-capturing regex)
           });
 
           __AA_CACHE = { t: Date.now(), set };
@@ -441,14 +444,15 @@ async function loadAAIndex() {
           resolve(set);
         } catch (e) {
           frame.remove();
-          resolve(new Set()); // Fail-safe
+          resolve(new Set()); // fail-safe
         }
       };
     } catch (err) {
-      resolve(new Set()); // Fail-safe
+      resolve(new Set()); // fail-safe
     }
   });
 }
+
 
 
 
