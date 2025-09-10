@@ -283,6 +283,178 @@
         closeIntelliOverlay();
       }, true);
     }
+  /* ---------- Answering Rules helpers ---------- */
+function cvDetectDomainSlug(){
+  // Try to discover `domain` used in URLs like /portal/answerrules/index/300@<domain>
+  try {
+    // 1) Look for links already containing '@domain'
+    var a = document.querySelector('a[href*="/portal/answerrules/index/"]');
+    if (a) {
+      var m = a.getAttribute('href').match(/@([a-z0-9._-]+)/i);
+      if (m) return m[1];
+    }
+    // 2) Scan page text for user@domain tokens
+    var txt = document.body.innerText || '';
+    var m2 = txt.match(/\b[^\s@]+@([a-z0-9._-]+)\b/i);
+    if (m2) return m2[1];
+
+    // 3) Last resort: pull from a cookie or meta if portal exposes it
+    var m3 = (document.cookie || '').match(/(?:^|;\s*)domain=([^;]+)/i);
+    if (m3) return decodeURIComponent(m3[1]);
+  } catch(_) {}
+  return null; // will fall back to other candidates
+}
+
+function cvBuildAnswerRulesCandidates(ext){
+  var domain = cvDetectDomainSlug();
+  var list = [];
+  if (domain) list.push('/portal/answerrules/index/' + ext + '@' + domain);
+  list.push('/portal/answerrules/index/' + ext);
+  list.push('/portal/answerrules?user=' + encodeURIComponent(ext));
+  return list;
+}
+
+function cvParseAnswerRulesFromDoc(doc){
+  // Expect a table with columns: Time Frame | Description | Star Codes
+  var rows = [].slice.call(doc.querySelectorAll('table tr, .list tbody tr, .table tr'));
+  var out  = [];
+  var order = 0;
+
+  rows.forEach(function(tr){
+    var tds = tr.querySelectorAll('td,th');
+    if (!tds || tds.length < 2) return; // skip header or invalid rows
+
+    var tfCell = tds[0];
+    var desc   = (tds[1].innerText || '').trim();
+    var toggle = (tds[2] ? tds[2].innerText : '').trim();
+
+    var tfTxt  = (tfCell.innerText || '').trim();
+    var active = /Active/i.test(tfTxt) ? 'Active' : (/Disabled/i.test(tfTxt) ? 'Disabled' : '');
+    // Clean "Active/Disabled" tokens out of time frame name
+    var tfName = tfTxt.replace(/\b(Active|Disabled)\b/gi,'').trim();
+
+    if (!tfName) return;
+
+    out.push({
+      order: ++order,                 // top-down priority (1 is highest)
+      timeFrame: tfName,
+      status: active || 'Unknown',
+      description: desc,
+      toggle: toggle || ''
+    });
+  });
+
+  return out;
+}
+
+/* Loads Answering Rules for a numeric extension.
+   Returns: { ext, urlTried, rules: [...] }  */
+function loadAnsweringRules(ext){
+  return new Promise(function(resolve){
+    var candidates = cvBuildAnswerRulesCandidates(ext);
+    var frame = null, timer = null, idx = 0;
+
+    function cleanup(){
+      try { if (timer) clearTimeout(timer); } catch(_){}
+      try { if (frame) frame.remove(); } catch(_){}
+    }
+    function failOrNext(){
+      if (++idx >= candidates.length) { cleanup(); return resolve({ ext, urlTried: null, rules: [] }); }
+      tryUrl();
+    }
+    function tryUrl(){
+      var url = candidates[idx];
+      if (frame) frame.remove();
+      frame = document.createElement('iframe');
+      frame.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none';
+      frame.setAttribute('aria-hidden','true');
+      frame.id = 'cv-intelli-arframe';
+      frame.src = url;
+      document.body.appendChild(frame);
+
+      timer = setTimeout(failOrNext, 10000); // 10s guard
+
+      frame.onload = function(){
+        try {
+          clearTimeout(timer);
+          var doc   = frame.contentDocument || frame.contentWindow.document;
+          var rules = cvParseAnswerRulesFromDoc(doc);
+          if (!rules.length) return failOrNext();
+          cleanup();
+          resolve({ ext, urlTried: url, rules });
+        } catch(_) {
+          failOrNext();
+        }
+      };
+    }
+    tryUrl();
+  });
+}
+
+/* ---------- Drawer UI for Answering Rules ---------- */
+function cvEnsureDrawer(){
+  var d = document.getElementById('cv-intelli-drawer');
+  if (d) return d;
+  var root = document.getElementById('cv-intelli-root') || document.body;
+  d = document.createElement('div');
+  d.id = 'cv-intelli-drawer';
+  d.className = 'drawer';
+  d.innerHTML =
+    '<div class="drawer-h">Answering Rules <button class="drawer-x" title="Close">×</button></div>'
+  + '<div class="drawer-b" id="cv-intelli-drawer-body">Loading…</div>';
+  root.appendChild(d);
+  d.querySelector('.drawer-x').addEventListener('click', function(){ d.classList.remove('open'); });
+  return d;
+}
+
+function cvOpenRulesDrawer(title, payload){
+  var d = cvEnsureDrawer();
+  var b = document.getElementById('cv-intelli-drawer-body');
+  var rules = (payload && payload.rules) || [];
+  var ext   = (payload && payload.ext) || '';
+  var url   = (payload && payload.urlTried) || '';
+
+  if (!rules.length){
+    b.innerHTML = '<div style="color:#a00">No answering rules found for '+(title||ext)+'.</div>'
+                + (url ? ('<div class="muted" style="font-size:12px">Tried: '+url+'</div>') : '');
+  } else {
+    var html = [];
+    html.push('<div class="muted" style="margin-bottom:8px">User '+(title||ext)+' — priority is top to bottom; first match wins.</div>');
+    if (url) html.push('<div class="muted" style="font-size:12px;margin-bottom:8px">Source: '+url+'</div>');
+    html.push('<div style="border:1px solid #eee;border-radius:8px;overflow:hidden">');
+    rules.forEach(function(r){
+      html.push(
+        '<div style="display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-bottom:1px solid #f5f5f5">'
+      +   '<div style="min-width:22px;text-align:center;font-weight:600">'+r.order+'</div>'
+      +   '<div style="flex:1 1 auto">'
+      +     '<div style="display:flex;gap:8px;align-items:center;margin-bottom:2px">'
+      +       '<span style="font-weight:600">'+r.timeFrame+'</span>'
+      +       '<span class="chip '+(r.status==='Active'?'active':'')+'">'+r.status+'</span>'
+      +     '</div>'
+      +     (r.description ? ('<div class="muted">'+r.description+'</div>') : '')
+      +     (r.toggle ? ('<div class="muted" style="font-size:12px">Toggle: '+r.toggle+'</div>') : '')
+      +   '</div>'
+      +   '<div style="flex:0 0 auto;display:flex;gap:6px">'
+      +     '<button class="btn ghost" data-action="tf-times" data-tf="'+encodeURIComponent(r.timeFrame)+'" data-ext="'+encodeURIComponent(ext)+'">Date/Time</button>'
+      +   '</div>'
+      + '</div>'
+      );
+    });
+    html.push('</div>');
+    b.innerHTML = html.join('');
+  }
+
+  // Wire the Date/Time buttons (next step: fetch schedules)
+  b.querySelectorAll('button[data-action="tf-times"]').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      // Placeholder hook: we will implement time-frame schedules next.
+      alert('Fetching schedule for "'+decodeURIComponent(btn.getAttribute('data-tf'))+'" (coming next).');
+    });
+  });
+
+  d.classList.add('open');
+}
+  
   })();
 
   function ensureRoot(){
@@ -913,6 +1085,33 @@ async function loadAAIndex() {
             for (var i=0;i<g.numbers.length;i++){
               csv += '"' + g.numbers[i].number + '","' + dest + '"\n';
             }
+            // === NEW: Answering Rules / Routing button (User only) ===
+if (g.type === 'User') {
+  var rulesBtn = make('button','btn ghost','Answering Rules / Routing');
+  rulesBtn.onclick = async function(){
+    // Determine the extension to query:
+    var ext = '';
+    if (g.id && /^\d{2,6}$/.test(String(g.id))) ext = String(g.id);
+    if (!ext && g.name) {
+      var m = String(g.name).match(/\b(\d{2,6})\b/);
+      if (m) ext = m[1];
+    }
+
+    if (!ext) { alert('Could not determine user extension for this destination.'); return; }
+
+    // Show drawer immediately, then load rules
+    cvOpenRulesDrawer(ext, { ext: ext, rules: [] });
+
+    try {
+      var payload = await loadAnsweringRules(ext);
+      cvOpenRulesDrawer(ext, payload);
+    } catch (e) {
+      cvOpenRulesDrawer(ext, { ext: ext, rules: [] });
+    }
+  };
+  acts.appendChild(rulesBtn);
+}
+
             var blob = new Blob([csv], {type:'text/csv'});
             var url  = URL.createObjectURL(blob);
             var a    = document.createElement('a');
