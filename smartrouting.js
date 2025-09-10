@@ -395,55 +395,61 @@
   }
 
   /* ---------- Auto Attendants index (portal/attendants) — cached, no timeouts ---------- */
-/* ---------- Auto Attendants index (robust) ---------- */
+/* ---------- Auto Attendants index (robust iframe loader) ---------- */
 var __AA_CACHE = __AA_CACHE || null;
-async function loadAAIndex(){
-  if (__AA_CACHE && (Date.now() - __AA_CACHE.t < 5*60*1000)) return __AA_CACHE.set;
 
-  return new Promise(function(resolve){
-    try{
-      var frame = document.getElementById('cv-intelli-aa');
-      if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+async function loadAAIndex() {
+  // If cached and fresh, return cached set
+  if (__AA_CACHE && (Date.now() - __AA_CACHE.t < 5 * 60 * 1000)) return __AA_CACHE.set;
 
+  return new Promise(function(resolve) {
+    try {
+      // Remove old frame if present
+      let frame = document.getElementById('cv-intelli-aa');
+      if (frame) frame.remove();
+
+      // Create hidden iframe
       frame = document.createElement('iframe');
       frame.id = 'cv-intelli-aa';
       frame.src = '/portal/attendants';
       Object.assign(frame.style, {
-        position:'fixed', left:'-9999px', top:'-9999px', width:'1px', height:'1px', opacity:'0'
+        position: 'fixed',
+        left: '-9999px',
+        top: '-9999px',
+        width: '1px',
+        height: '1px',
+        opacity: '0',
+        pointerEvents: 'none'
       });
-      frame.setAttribute('aria-hidden','true');
+      frame.setAttribute('aria-hidden', 'true');
       document.body.appendChild(frame);
 
-      frame.onload = function(){
-        try{
-          var doc  = frame.contentWindow.document;
-          var rows = [].slice.call(doc.querySelectorAll('table tr, .list tbody tr, .table tr'));
-          var set  = new Set();
+      frame.onload = function() {
+        try {
+          const doc = frame.contentDocument || frame.contentWindow.document;
+          const rows = [...doc.querySelectorAll('tr')];
+          const set = new Set();
 
-          rows.forEach(function(tr){
-            // Try a likely "extension" cell first, then fall back to the whole row text
-            var extCell = tr.querySelector('[data-col="extension"], .col-extension') || tr.querySelector('td:nth-child(2)');
-            var candidates = [];
-            if (extCell) candidates.push(extCell.textContent || '');
-            candidates.push(tr.textContent || '');
-
-            for (var i=0;i<candidates.length;i++){
-              var m = String(candidates[i]||'').match(/\b(\d{2,6})\b/); // accept 2–6 digit exts
-              if (m) { set.add(m[1]); break; }
-            }
+          rows.forEach(tr => {
+            const txt = tr.innerText.trim();
+            const match = txt.match(/\b\d{2,6}\b/); // Grab any 2–6 digit ext
+            if (match) set.add(match[1]);
           });
 
-          __AA_CACHE = { t: Date.now(), set: set };
-          if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+          __AA_CACHE = { t: Date.now(), set };
+          frame.remove();
           resolve(set);
-        }catch(_){
-          if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
-          resolve(new Set()); // never block the main flow
+        } catch (e) {
+          frame.remove();
+          resolve(new Set()); // Fail-safe
         }
       };
-    }catch(_){ resolve(new Set()); }
+    } catch (err) {
+      resolve(new Set()); // Fail-safe
+    }
   });
 }
+
 
 
   /* ---------- CSV helpers ---------- */
